@@ -22,7 +22,7 @@ validation_dataset_file=$WORK_DATASET_FOLDER/datasets/${VALIDATION_SUBJECT_ID}/$
 reference_file=$WORK_DATASET_FOLDER/datasets/${VALIDATION_SUBJECT_ID}/masks/${VALIDATION_SUBJECT_ID}_wm.nii.gz
 
 # RL params
-max_ep=1000 # Chosen empirically
+max_ep=20 # Chosen empirically
 log_interval=50 # Log at n episodes
 lr=0.0005 # Learning rate
 gamma=0.5 # Gamma for reward discounting
@@ -63,7 +63,6 @@ do
     --npv=${npv} \
     --theta=${theta} \
     --use_gpu \
-    --use_comet \
     --tractometer_validator \
     --scoring_data=${SCORING_DATA}
 

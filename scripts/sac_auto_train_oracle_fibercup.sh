@@ -72,7 +72,8 @@ do
     --use_comet \
     --interface \
     --run_oracle='feedforward_epoch99_fibercup.ckpt' \
-    --run_tractometer=${SCORING_DATA}
+    --run_tractometer=${SCORING_DATA} \
+    --cmc
 
   mkdir -p $EXPERIMENTS_FOLDER/"$EXPERIMENT"
   mkdir -p $EXPERIMENTS_FOLDER/"$EXPERIMENT"/"$ID"

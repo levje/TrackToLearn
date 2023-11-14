@@ -3,7 +3,8 @@
 import argparse
 from argparse import RawTextHelpFormatter
 
-import comet_ml  # noqa: F401 ugh
+import comet_ml
+from comet_ml import experiment  # noqa: F401 ugh
 import torch
 from comet_ml import Experiment as CometExperiment
 
@@ -101,10 +102,11 @@ def main():
     print(args)
 
     # Create comet-ml experiment
-    experiment = CometExperiment(project_name=args.experiment,
-                                 workspace=args.workspace, parse_args=False,
-                                 auto_metric_logging=False,
-                                 disabled=not args.use_comet)
+    experiment = None
+    # experiment = CometExperiment(project_name=args.experiment,
+    #                              workspace=args.workspace, parse_args=False,
+    #                              auto_metric_logging=False,
+    #                              disabled=not args.use_comet)
 
     # Create and run experiment
     sac_auto_experiment = SACAutoTrackToLearnTraining(

@@ -78,7 +78,7 @@ class TrackToLearnTrack(TrackToLearnExperiment):
 
         self.run_tractometer = False
         self.run_oracle = False
-        self.compute_reward = False
+        self.compute_reward = True
         self.render = False
 
         if not track_dto['cpu'] and not torch.cuda.is_available():
@@ -116,6 +116,19 @@ class TrackToLearnTrack(TrackToLearnExperiment):
             self.no_retrack = hyperparams.get('no_retrack', False)
             self.action_type = hyperparams.get("action_type", "cartesian")
             self.action_size = hyperparams.get("action_size", 3)
+            # Added by Jeremi
+            self.noise = hyperparams.get("noise", 0.0)
+            self.dense_oracle_weighting = hyperparams.get("dense_oracle_weighting", 0.0)
+            self.sparse_oracle_weighting = hyperparams.get("sparse_oracle_weighting", 0.0)
+            self.oracle_validator = hyperparams.get("oracle_validator")
+            self.oracle_validator = None # Where to get this, or what is the default value?
+            self.oracle_stopping_criterion = hyperparams.get("oracle_stopping_criterion", False)
+            self.oracle_checkpoint = hyperparams.get("oracle_checkpoint", None)
+            self.scoring_data = None # Where to get this, or what is the default value?
+            self.tractometer_validator = None
+            self.tractometer_weighting = hyperparams.get("tractometer_weighting", 0)
+            self.binary_stopping_threshold = hyperparams.get("binary_stopping_threshold", 0.5)
+
 
         self.alignment_weighting = 0.0
         self.straightness_weighting = 0.0
