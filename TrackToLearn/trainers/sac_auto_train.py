@@ -102,12 +102,14 @@ def main():
     print(args)
 
     # Create comet-ml experiment
-    experiment = None
-    # experiment = CometExperiment(project_name=args.experiment,
-    #                              workspace=args.workspace, parse_args=False,
-    #                              auto_metric_logging=False,
-    #                              disabled=not args.use_comet)
-
+    if args.use_comet:
+        print("Using comet!")
+        experiment = CometExperiment(project_name=args.experiment,
+                                  workspace=args.workspace, parse_args=False,
+                                  auto_metric_logging=False,
+                                  disabled=not args.use_comet)
+    else:
+        experiment = None
     # Create and run experiment
     sac_auto_experiment = SACAutoTrackToLearnTraining(
         # Dataset params

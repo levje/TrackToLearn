@@ -115,7 +115,7 @@ class TrackToLearnValidation(TrackToLearnExperiment):
             self.no_retrack = hyperparams.get('no_retrack', False)
             self.action_type = hyperparams.get("action_type", "cartesian")
             self.action_size = hyperparams.get("action_size", 3)
-
+            self.tractometer_weighting = hyperparams.get("tractometer_weighting", 0)
         self.comet_experiment = None
 
         self.device = torch.device(

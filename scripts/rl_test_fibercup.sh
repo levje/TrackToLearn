@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 # This should point to your dataset folder
 DATASET_FOLDER=${TRACK_TO_LEARN_DATA}
 
@@ -19,9 +21,9 @@ max_length=200
 EXPERIMENT=$1
 ID=$2
 
-validstds=(0.0 0.1)
-subjectids=(fibercup fibercup_flipped)
-seeds=(1111 2222 3333 4444 5555)
+validstds=(1.0)
+subjectids=(fibercup)
+seeds=(1111)
 
 for SEED in "${seeds[@]}"
 do
@@ -35,6 +37,7 @@ do
 
       dataset_file=$DATASET_FOLDER/datasets/${SUBJECT_ID}/${SUBJECT_ID}.hdf5
       reference_file=$DATASET_FOLDER/datasets/${SUBJECT_ID}/masks/${SUBJECT_ID}_wm.nii.gz
+      filename=tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}".tck
 
       echo $DEST_FOLDER/model/hyperparameters.json
       ttl_validation.py \
@@ -46,14 +49,16 @@ do
         "${reference_file}" \
         $DEST_FOLDER/model \
         $DEST_FOLDER/model/hyperparameters.json \
+        ${DEST_FOLDER}/${filename} \
         --prob="${prob}" \
         --npv="${npv}" \
         --n_actor="${n_actor}" \
         --min_length="$min_length" \
         --max_length="$max_length" \
         --use_gpu \
+        --binary_stopping_threshold=0.1 \
         --fa_map="$DATASET_FOLDER"/datasets/${SUBJECT_ID}/dti/"${SUBJECT_ID}"_fa.nii.gz \
-        --remove_invalid_streamlines
+        #--remove_invalid_streamlines
 
       validation_folder=$DEST_FOLDER/scoring_"${prob}"_"${SUBJECT_ID}"_${npv}
 

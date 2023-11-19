@@ -22,7 +22,7 @@ validation_dataset_file=$WORK_DATASET_FOLDER/datasets/${VALIDATION_SUBJECT_ID}/$
 reference_file=$WORK_DATASET_FOLDER/datasets/${VALIDATION_SUBJECT_ID}/masks/${VALIDATION_SUBJECT_ID}_wm.nii.gz
 
 # RL params
-max_ep=20 # Chosen empirically
+max_ep=120 # Chosen empirically
 log_interval=50 # Log at n episodes
 lr=0.0005 # Learning rate
 gamma=0.5 # Gamma for reward discounting
@@ -34,7 +34,7 @@ prob=0.0 # Noise to add to make a prob output. 0 for deterministic
 npv=10 # Seed per voxel
 theta=30 # Maximum angle for streamline curvature
 
-EXPERIMENT=SAC_Auto_FiberCupTrainCompatibilityTest
+EXPERIMENT=SAC_Auto_FiberCupTrainCompatibilityTest_JeremiPretrain
 
 ID=$(date +"%F-%H_%M_%S")
 
@@ -64,9 +64,9 @@ do
     --theta=${theta} \
     --use_gpu \
     --tractometer_validator \
-    --scoring_data=${SCORING_DATA}
-
-
+    --scoring_data=${SCORING_DATA} \
+    --use_comet \
+    --workspace="mrzarfir"
   mkdir -p $EXPERIMENTS_FOLDER/"$EXPERIMENT"
   mkdir -p $EXPERIMENTS_FOLDER/"$EXPERIMENT"/"$ID"
   mkdir -p $EXPERIMENTS_FOLDER/"$EXPERIMENT"/"$ID"/
