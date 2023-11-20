@@ -75,6 +75,7 @@ class RetrackingEnvironment(TrackingEnvironment):
         self.compute_reward = env.compute_reward
         self.reward_function = env.reward_function
         self.stopping_criteria = env.stopping_criteria
+        self.filters = env.filters
 
     @classmethod
     def from_env(

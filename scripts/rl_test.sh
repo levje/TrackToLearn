@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
-set -x
+
 # This should point to your dataset folder
 DATASET_FOLDER=${TRACK_TO_LEARN_DATA}
 

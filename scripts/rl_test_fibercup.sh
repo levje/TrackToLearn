@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -x
-
 # This should point to your dataset folder
 DATASET_FOLDER=${TRACK_TO_LEARN_DATA}
 
@@ -58,24 +56,18 @@ do
         --use_gpu \
         --binary_stopping_threshold=0.1 \
         --fa_map="$DATASET_FOLDER"/datasets/${SUBJECT_ID}/dti/"${SUBJECT_ID}"_fa.nii.gz \
-        #--remove_invalid_streamlines
+        --scoring_data="$SCORING_DATA"
 
       validation_folder=$DEST_FOLDER/scoring_"${prob}"_"${SUBJECT_ID}"_${npv}
 
       mkdir -p $validation_folder
 
-      mv $DEST_FOLDER/tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}".trk $validation_folder/
+      mv $DEST_FOLDER/tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}".tck $validation_folder/
 
-      python scripts/score_tractogram.py \
-        $validation_folder/tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}".trk \
-        "$SCORING_DATA" \
-        $validation_folder \
-        --compute_ic_ib \
-        --save_full_vc \
-        --save_full_ic \
-        --save_full_nc \
-        --save_ib \
-        --save_vb -f -v
+      if [[ -d ${validation_folder}/scoring ]]; then
+        rm -r $validation_folder/scoring
+      fi
+      ./scripts/tractometer.sh $validation_folder/${filename} $validation_folder/scoring $SCORING_DATA
     done
   done
 done

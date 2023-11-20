@@ -44,6 +44,19 @@ class TrackingEnvironment(BaseEnv):
                 streamlines, self.stopping_criteria)
         return stopping, flags
 
+    def _get_backtrackable_indices(
+            self,
+            streamlines: np.ndarray,
+            stopping_flags: np.ndarray
+    ) -> np.ndarray:
+        """ Filter out the stopping flags from which we are able to perform backtracking to retry different paths
+        for each stopped streamline.
+
+        For example, if a streamline stopped because of STOPPING_TARGET, we might not want to backtrack.
+        """
+        flag1 = np.not_equal(stopping_flags, StoppingFlags.STOPPING_TARGET)
+        flag2 = np.not_equal(stopping_flags, StoppingFlags.STOPPING_ORACLE)
+        return np.logical_or(flag1, flag2)
     def nreset(self, n_seeds: int) -> np.ndarray:
         """ Initialize tracking seeds and streamlines. Will
         chose N random seeds among all seeds.
@@ -178,6 +191,27 @@ class TrackingEnvironment(BaseEnv):
         # Keep the reason why tracking stopped
         self.flags[
             self.stopping_idx] = new_flags[stopping]
+
+
+        # Jeremi
+        # Before declaring the trajectory over, we will backtrack a few steps on each failed trajectory and rollout a few times
+        # for each failed trajectory and take the new trajectory that maximises a certain parameter (Oracle's value, or distance
+        # to the border for example).
+        n_rollouts = 5
+        backup_size = 6
+        backtrackable_idx = self._get_backtrackable_indices(self.streamlines[self.stopping_idx, :, :], new_flags[stopping])
+        backtrackable_streamlines = self.streamlines[backtrackable_idx, :, :]
+
+        # Backtrack the streamlines
+        backup_length = self.length - backup_size
+        if backup_length > 1:  # To keep the initial point
+            # self.streamlines[backtrackable_idx, 1:backup_length, :] = 0
+            backtrackable_streamlines[:, 1:backup_length, :] = 0  # Backtrack on backup_length
+            tests = np.array([backtrackable_streamlines.copy() for _ in range(n_rollouts)])
+            rollouts = np.repeat(backtrackable_streamlines[None, ...], n_rollouts, axis=0) # TODO: Contains the different rollouts
+            for i in range(backup_size):
+                new_directions = np.repeat(directions[None, ...], n_rollouts, axis=0) # TODO: How to get new directions?
+                backtrackable_streamlines = backtrackable_streamlines[:, :, backup_length, :] + new_directions
 
         # Keep which trajectory is over
         self.dones[self.stopping_idx] = 1
