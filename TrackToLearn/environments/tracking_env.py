@@ -199,19 +199,20 @@ class TrackingEnvironment(BaseEnv):
         # to the border for example).
         n_rollouts = 5
         backup_size = 6
-        backtrackable_idx = self._get_backtrackable_indices(self.streamlines[self.stopping_idx, :, :], new_flags[stopping])
+        backtrackable_mask = self._get_backtrackable_indices(self.streamlines[self.stopping_idx, :, :], new_flags[stopping])
+        backtrackable_idx = np.where(backtrackable_mask)[0]
         backtrackable_streamlines = self.streamlines[backtrackable_idx, :, :]
 
         # Backtrack the streamlines
         backup_length = self.length - backup_size
-        if backup_length > 1:  # To keep the initial point
-            # self.streamlines[backtrackable_idx, 1:backup_length, :] = 0
-            backtrackable_streamlines[:, 1:backup_length, :] = 0  # Backtrack on backup_length
+        if backtrackable_mask.size > 0 and backup_length > 1:  # To keep the initial point
+            backtrackable_streamlines[:, backup_length:self.length, :] = 0  # Backtrack on backup_length
             tests = np.array([backtrackable_streamlines.copy() for _ in range(n_rollouts)])
             rollouts = np.repeat(backtrackable_streamlines[None, ...], n_rollouts, axis=0) # TODO: Contains the different rollouts
             for i in range(backup_size):
-                new_directions = np.repeat(directions[None, ...], n_rollouts, axis=0) # TODO: How to get new directions?
-                backtrackable_streamlines = backtrackable_streamlines[:, :, backup_length, :] + new_directions
+                new_directions = np.repeat(directions[None, self.stopping_idx], n_rollouts, axis=0) # TODO: How to get new directions?
+                rollouts[:, :, backup_length, :] += new_directions
+                backup_length += 1
 
         # Keep which trajectory is over
         self.dones[self.stopping_idx] = 1
