@@ -5,7 +5,10 @@ from typing import Tuple
 from dipy.io.stateful_tractogram import Space, StatefulTractogram
 from nibabel.streamlines import Tractogram
 
+from TrackToLearn.algorithms.shared.offpolicy import ActorCritic
+from TrackToLearn.datasets.utils import MRIDataVolume
 from TrackToLearn.environments.env import BaseEnv
+from TrackToLearn.environments.rollout_env import RolloutEnvironment
 from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
 
@@ -18,6 +21,65 @@ class TrackingEnvironment(BaseEnv):
     TODO: Clean up "_private functions" and public functions. Some could
     go into BaseEnv.
     """
+
+    def __init__(
+            self,
+            input_volume: MRIDataVolume,
+            tracking_mask: MRIDataVolume,
+            target_mask: MRIDataVolume,
+            seeding_mask: MRIDataVolume,
+            peaks: MRIDataVolume,
+            env_dto: dict,
+            include_mask: MRIDataVolume = None,
+            exclude_mask: MRIDataVolume = None,
+            rollout_agent: ActorCritic = None
+    ):
+        """
+        Parameters
+        ----------
+        input_volume: MRIDataVolume
+            Volumetric data containing the SH coefficients
+        tracking_mask: MRIDataVolume
+            Volumetric mask where tracking is allowed
+        target_mask: MRIDataVolume
+            Mask representing the tracking endpoints
+        seeding_mask: MRIDataVolume
+            Mask where seeding should be done
+        peaks: MRIDataVolume
+            Volume containing the fODFs peaks
+        env_dto: dict
+            DTO containing env. parameters
+        include_mask: MRIDataVolume
+            Mask representing the tracking go zones. Only useful if
+            using CMC.
+        exclude_mask: MRIDataVolume
+            Mask representing the tracking no-go zones. Only useful if
+            using CMC.
+        """
+        super().__init__(input_volume,
+                         tracking_mask,
+                         target_mask,
+                         seeding_mask,
+                         peaks,
+                         env_dto,
+                         include_mask,
+                         exclude_mask)
+
+        self.do_rollouts = rollout_agent is not None
+        if self.do_rollouts:
+            self.rollout_env = RolloutEnvironment(input_volume,
+                                                  tracking_mask,
+                                                  target_mask,
+                                                  seeding_mask,
+                                                  peaks,
+                                                  env_dto,
+                                                  rollout_agent,  # Rollout agent
+                                                  include_mask,
+                                                  exclude_mask,
+                                                  n_rollouts=5,
+                                                  backup_size=1,
+                                                  forward_comp=6)
+
 
     def _is_stopping(
         self,
@@ -185,22 +247,31 @@ class TrackingEnvironment(BaseEnv):
         # Before declaring the trajectory over, we will backtrack a few steps on each failed trajectory and rollout a few times
         # for each failed trajectory and take the new trajectory that maximises a certain parameter (Oracle's value, or distance
         # to the border for example).
-        n_rollouts = 5
-        backup_size = 6
-        backtrackable_mask = self._get_backtrackable_indices(self.streamlines[self.stopping_idx, :, :], new_flags[stopping])
-        backtrackable_idx = np.where(backtrackable_mask)[0]
-        backtrackable_streamlines = self.streamlines[backtrackable_idx, :, :]
+        # n_rollouts = 5
+        # backup_size = 6
+        # backtrackable_mask = self._get_backtrackable_indices(self.streamlines[self.stopping_idx, :, :], new_flags[stopping])
+        # backtrackable_idx = np.where(backtrackable_mask)[0]
+        # backtrackable_streamlines = self.streamlines[backtrackable_idx, :, :]
 
         # Backtrack the streamlines
-        backup_length = self.length - backup_size
-        if backtrackable_mask.size > 0 and backup_length > 1:  # To keep the initial point
-            backtrackable_streamlines[:, backup_length:self.length, :] = 0  # Backtrack on backup_length
-            tests = np.array([backtrackable_streamlines.copy() for _ in range(n_rollouts)])
-            rollouts = np.repeat(backtrackable_streamlines[None, ...], n_rollouts, axis=0) # TODO: Contains the different rollouts
-            for i in range(backup_size):
-                new_directions = np.repeat(directions[None, self.stopping_idx], n_rollouts, axis=0) # TODO: How to get new directions?
-                rollouts[:, :, backup_length, :] += new_directions
-                backup_length += 1
+        # backup_length = self.length - backup_size
+        # if backtrackable_mask.size > 0 and backup_length > 1:  # To keep the initial point
+        #     backtrackable_streamlines[:, backup_length:self.length, :] = 0  # Backtrack on backup_length
+        #     tests = np.array([backtrackable_streamlines.copy() for _ in range(n_rollouts)])
+        #     rollouts = np.repeat(backtrackable_streamlines[None, ...], n_rollouts, axis=0)  # TODO: Contains the different rollouts
+        #     for i in range(backup_size):
+        #         new_directions = np.repeat(directions[None, self.stopping_idx], n_rollouts, axis=0)  # TODO: How to get new directions?
+        #         rollouts[:, :, backup_length, :] += new_directions
+        #         backup_length += 1
+
+        if self.do_rollouts:
+            new_streamlines = self.rollout_env.rollout(self.streamlines,
+                                     self.stopping_idx,
+                                     new_flags[stopping],
+                                     self.length,
+                                     prob=0.1)
+
+            self.streamlines = new_streamlines
 
         # Keep which trajectory is over
         self.dones[self.stopping_idx] = 1

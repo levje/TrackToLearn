@@ -18,11 +18,11 @@ class RolloutEnvironment(BaseEnv):
                  peaks: MRIDataVolume,
                  env_dto: dict,
                  agent: ActorCritic,
+                 include_mask: MRIDataVolume = None,
+                 exclude_mask: MRIDataVolume = None,
                  n_rollouts: int = 5,  # Nb of rollouts to try
                  backup_size: int = 1,  # Nb of steps we are backtracking
                  forward_comp: int = 6,  # Nb of steps further we need to compare the different rollouts
-                 include_mask: MRIDataVolume = None,
-                 exclude_mask: MRIDataVolume = None,
                  ):
         super().__init__(input_volume, tracking_mask, target_mask, seeding_mask, peaks, env_dto, include_mask,
                          exclude_mask)
