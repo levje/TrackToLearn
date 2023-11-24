@@ -32,7 +32,7 @@ fi
 
 echo '------------- SEGMENTATION ------------'
 scil_score_tractogram.py $tractogram $config_file_segmentation $out_dir --no_empty \
-    --gt_dir $scoring_data --reference $ref --json_prefix tmp_ --no_bbox_check --unique --compute_ic -v;
+    --gt_dir $scoring_data --json_prefix tmp_ --no_bbox_check --unique --compute_ic -v;
 
 echo '------------- Merging CC sub-bundles ------------'
 CC_files=$(ls $out_dir/segmented_VB/CC* 2> /dev/null)
@@ -55,6 +55,6 @@ fi
 
 echo '------------- FINAL SCORING ------------'
 scil_score_bundles.py -v $config_file_tractometry $out_dir \
-      --gt_dir $scoring_data --reference $ref --no_bbox_check 
+      --gt_dir $scoring_data --no_bbox_check
 
 cat $out_dir/results.json

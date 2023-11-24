@@ -280,7 +280,6 @@ class BaseEnv(object):
 
         # Reward function and reward factors
         if self.compute_reward:
-            print("Jeremi: Rewards should be computed")
             # Reward streamline according to alignment with local peaks
             peaks_reward = PeaksAlignmentReward(self.peaks, self.asymmetric)
             # Reward streamlines if they reach a specific mask

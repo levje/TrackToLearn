@@ -44,19 +44,7 @@ class TrackingEnvironment(BaseEnv):
                 streamlines, self.stopping_criteria)
         return stopping, flags
 
-    def _get_backtrackable_indices(
-            self,
-            streamlines: np.ndarray,
-            stopping_flags: np.ndarray
-    ) -> np.ndarray:
-        """ Filter out the stopping flags from which we are able to perform backtracking to retry different paths
-        for each stopped streamline.
 
-        For example, if a streamline stopped because of STOPPING_TARGET, we might not want to backtrack.
-        """
-        flag1 = np.not_equal(stopping_flags, StoppingFlags.STOPPING_TARGET)
-        flag2 = np.not_equal(stopping_flags, StoppingFlags.STOPPING_ORACLE)
-        return np.logical_or(flag1, flag2)
     def nreset(self, n_seeds: int) -> np.ndarray:
         """ Initialize tracking seeds and streamlines. Will
         chose N random seeds among all seeds.
