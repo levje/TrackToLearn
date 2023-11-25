@@ -76,9 +76,12 @@ class TrackToLearnTrack(TrackToLearnExperiment):
         self.sh_basis = track_dto['sh_basis']
         self.save_seeds = track_dto['save_seeds']
 
-        self.run_tractometer = False
-        self.run_oracle = False
-        self.compute_reward = True
+        # Tractometer parameters
+        self.tractometer_validator = False
+        self.tractometer_weighting = 0
+        self.scoring_data = None
+
+        self.compute_reward = False
         self.render = False
 
         if not track_dto['cpu'] and not torch.cuda.is_available():
@@ -137,6 +140,7 @@ class TrackToLearnTrack(TrackToLearnExperiment):
         self.exclude_penalty_factor = 0.0
         self.angle_penalty_factor = 0.0
         self.oracle_weighting = 0.0
+        self.oracle_filter = False
         self.coverage_weighting = 0.0
 
         self.random_seed = track_dto['rng_seed']
