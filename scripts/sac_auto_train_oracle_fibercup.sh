@@ -71,12 +71,6 @@ do
     --prob=${prob} \
     --use_gpu \
     --use_comet \
-<<<<<<< HEAD
-    --interface \
-    --run_oracle='feedforward_epoch99_fibercup.ckpt' \
-    --run_tractometer=${SCORING_DATA} \
-    --cmc
-=======
     --binary_stopping_threshold=0.1 \
     --coverage_weighting=0.0 \
     --tractometer_validator \
@@ -85,7 +79,6 @@ do
     --oracle_validator \
     --sparse_oracle_weighting=10.0 \
     --oracle_checkpoint='epoch_49_fibercup_transformer.ckpt'
->>>>>>> to/reward
 
   mkdir -p $EXPERIMENTS_FOLDER/"$EXPERIMENT"
   mkdir -p $EXPERIMENTS_FOLDER/"$EXPERIMENT"/"$ID"
