@@ -157,7 +157,11 @@ class TrackToLearnExperiment(Experiment):
             'binary_stopping_threshold': self.binary_stopping_threshold,
             'add_neighborhood': self.add_neighborhood,
             'compute_reward': self.compute_reward,
-            'device': self.device
+            'device': self.device,
+            'do_rollout': self.do_rollout,
+            'backup_size': self.backup_size,
+            'n_rollouts': self.n_rollouts,
+            'extra_n_steps': self.extra_n_steps
         }
 
         if noisy:

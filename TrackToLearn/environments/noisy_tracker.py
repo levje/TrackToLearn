@@ -21,7 +21,6 @@ class NoisyTrackingEnvironment(TrackingEnvironment):
         env_dto,
         include_mask=None,
         exclude_mask=None,
-
     ):
         """
         Parameters
@@ -39,7 +38,7 @@ class NoisyTrackingEnvironment(TrackingEnvironment):
             env_dto,
             include_mask,
             exclude_mask)
-        print("JEREMI: envdto: ", env_dto)
+
         self.noise = env_dto['noise']
         self.fa_map = None
         if env_dto['fa_map']:

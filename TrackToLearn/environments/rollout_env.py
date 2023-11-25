@@ -1,6 +1,5 @@
 import numpy as np
-from TrackToLearn.environments.env import BaseEnv
-from TrackToLearn.algorithms.rl import RLAlgorithm
+from typing import Callable
 from TrackToLearn.algorithms.shared.offpolicy import ActorCritic
 from TrackToLearn.datasets.utils import (MRIDataVolume, SubjectData,
                                          convert_length_mm2vox,
@@ -9,27 +8,67 @@ from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
 
 
-class RolloutEnvironment(BaseEnv):
+class RolloutEnvironment(object):
+
+    # Specific constructor to avoid creating another RolloutEnvironment from the BaseEnv's constructor.
     def __init__(self,
-                 input_volume: MRIDataVolume,
-                 tracking_mask: MRIDataVolume,
-                 target_mask: MRIDataVolume,
-                 seeding_mask: MRIDataVolume,
-                 peaks: MRIDataVolume,
-                 env_dto: dict,
-                 agent: ActorCritic,
-                 include_mask: MRIDataVolume = None,
-                 exclude_mask: MRIDataVolume = None,
+                 agent: ActorCritic = None,
                  n_rollouts: int = 5,  # Nb of rollouts to try
                  backup_size: int = 1,  # Nb of steps we are backtracking
-                 forward_comp: int = 6,  # Nb of steps further we need to compare the different rollouts
+                 extra_n_steps: int = 6,  # Nb of steps further we need to compare the different rollouts
                  ):
-        super().__init__(input_volume, tracking_mask, target_mask, seeding_mask, peaks, env_dto, include_mask,
-                         exclude_mask)
+
+
         self.rollout_agent = agent
         self.n_rollouts = n_rollouts
         self.backup_size = backup_size
-        self.forward_comp = forward_comp
+        self.extra_n_steps = extra_n_steps
+
+    # Overrides the set_rollout_agent from the BaseEnv
+    def set_rollout_agent(self, rollout_agent: ActorCritic):
+        self.rollout_agent = rollout_agent
+
+    def is_rollout_agent_set(self):
+        return self.rollout_agent is not None
+
+    # TODO: Copied from env
+    def _compute_stopping_flags(
+        self,
+        streamlines: np.ndarray,
+        stopping_criteria: dict[StoppingFlags, Callable]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """ Checks which streamlines should stop and which ones should
+        continue.
+
+        Parameters
+        ----------
+        streamlines : `numpy.ndarray` of shape (n_streamlines, n_points, 3)
+            Streamline coordinates in voxel space
+        stopping_criteria : dict of int->Callable
+            List of functions that take as input streamlines, and output a
+            boolean numpy array indicating which streamlines should stop
+
+        Returns
+        -------
+        should_stop : `numpy.ndarray`
+            Boolean array, True is tracking should stop
+        flags : `numpy.ndarray`
+            `StoppingFlags` that triggered stopping for each stopping
+            streamline
+        """
+        idx = np.arange(len(streamlines))
+
+        should_stop = np.zeros(len(idx), dtype=np.bool_)
+        flags = np.zeros(len(idx), dtype=int)
+
+        # For each possible flag, determine which streamline should stop and
+        # keep track of the triggered flag
+        for flag, stopping_criterion in stopping_criteria.items():
+            stopped_by_criterion = stopping_criterion(streamlines)
+            flags[stopped_by_criterion] |= flag.value
+            should_stop[stopped_by_criterion] = True
+
+        return should_stop, flags
 
     def rollout(
             self,
@@ -37,21 +76,29 @@ class RolloutEnvironment(BaseEnv):
             stopping_idx: np.ndarray,
             stopping_flags: np.ndarray,
             current_length: int,
+            stopping_criteria: dict[StoppingFlags, Callable],
+            format_state_func: Callable[[np.ndarray], None],
             prob: float = 0.1
     ):
-        backtrackable_mask = self._get_backtrackable_indices(streamlines[stopping_idx, :, :], stopping_flags)
+        # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
+        # creating the agent before the environment.
+        if self.rollout_agent is None:
+            print("Rollout: no agent specified. Rollout aborted.")
+            return streamlines
+
+        backtrackable_mask = self._get_backtrackable_indices(stopping_flags)
         backtrackable_idx = np.where(backtrackable_mask)[0]
         backtrackable_streamlines = streamlines[backtrackable_idx, :, :]
 
         # Backtrack the streamlines
         backup_length = current_length - self.backup_size
-        if backtrackable_mask.size > 0 and backup_length > 1:  # To keep the initial point
+        if True:#backtrackable_mask.size > 0 and backup_length > 1:  # To keep the initial point
             backtrackable_streamlines[:, backup_length:current_length, :] = 0  # Backtrack on backup_length
             rollouts = np.repeat(backtrackable_streamlines[None, ...], self.n_rollouts,
                                  axis=0)  # Contains the different rollouts
-            while backup_length < (current_length + self.forward_comp):
+            while backup_length < (current_length + self.extra_n_steps):
                 for rollout in range(self.n_rollouts):
-                    state = self._format_state(rollouts[rollout, :, :backup_length, :])
+                    state = format_state_func(rollouts[rollout, :, :backup_length, :])
                     new_directions = self.rollout_agent.select_action(state=state, probabilistic=prob)
                     rollouts[rollout, :, backup_length, :] += new_directions
                 backup_length += 1

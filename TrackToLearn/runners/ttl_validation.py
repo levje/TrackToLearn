@@ -29,7 +29,8 @@ from TrackToLearn.experiment.experiment import (
     add_oracle_args,
     add_reward_args,
     add_tracking_args,
-    add_tractometer_args)
+    add_tractometer_args,
+    add_rollout_args)
 from TrackToLearn.experiment.tracker import Tracker
 from TrackToLearn.experiment.ttl import TrackToLearnExperiment
 
@@ -87,6 +88,11 @@ class TrackToLearnValidation(TrackToLearnExperiment):
         # Tractometer parameters
         self.tractometer_validator = valid_dto['tractometer_validator']
         self.scoring_data = valid_dto['scoring_data']
+
+        self.do_rollout = valid_dto['do_rollout']
+        self.backup_size = valid_dto['backup_size']
+        self.n_rollouts = valid_dto['n_rollouts']
+        self.extra_n_steps = valid_dto['extra_n_steps']
 
         self.compute_reward = True
 
@@ -184,6 +190,8 @@ class TrackToLearnValidation(TrackToLearnExperiment):
         # Load pretrained policies
         alg.agent.load(self.agent, 'last_model_state')
 
+        env.set_rollout_agent(alg.agent)
+
         # Initialize Tracker, which will handle streamline generation
         tracker = Tracker(
             alg, env, back_env, self.n_actor, self.interface_seeding,
@@ -245,6 +253,7 @@ def parse_args():
     add_oracle_args(parser)
     add_environment_args(parser)
     add_tracking_args(parser)
+    add_rollout_args(parser)
 
     arguments = parser.parse_args()
     return arguments

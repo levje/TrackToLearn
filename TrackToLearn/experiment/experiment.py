@@ -220,6 +220,18 @@ def add_tracking_args(parser: ArgumentParser):
                         help='If set, don\'t retrack backwards')
 
 
+def add_rollout_args(parser: ArgumentParser):
+    roll = parser.add_argument_group('Rollout')
+    roll.add_argument('--do_rollout', action='store_true',
+                        help='If set, backtracks the failing streamlines and retries new paths.')
+    roll.add_argument('--backup_size', type=int, default=1,
+                        help='Number of steps to backtrack before performing a rollout')
+    roll.add_argument('--n_rollouts', type=int, default=5,
+                        help='Number of rollouts to try out for a single failing streamline.')
+    roll.add_argument('--extra_n_steps', type=int,
+                        help='Number of steps ahead to compare the rollouts against each other.')
+
+
 def add_tractometer_args(parser: ArgumentParser):
     tractom = parser.add_argument_group('Tractometer')
     tractom.add_argument('--scoring_data', type=str, default=None,

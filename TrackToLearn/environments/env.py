@@ -27,6 +27,8 @@ from TrackToLearn.environments.filters import (CMCFilter, Filters,
 from TrackToLearn.environments.local_reward import (LengthReward,
                                                     PeaksAlignmentReward,
                                                     TargetReward)
+from TrackToLearn.algorithms.shared.offpolicy import ActorCritic
+from TrackToLearn.environments.rollout_env import RolloutEnvironment
 from TrackToLearn.environments.oracle_reward import OracleReward
 from TrackToLearn.environments.reward import RewardFunction
 from TrackToLearn.environments.tractometer_reward import TractometerReward
@@ -36,6 +38,7 @@ from TrackToLearn.environments.stopping_criteria import (
 from TrackToLearn.environments.utils import (  # is_looping,
     is_too_curvy, is_too_long)
 from TrackToLearn.utils.utils import from_polar, from_sphere, normalize_vectors
+
 
 # from dipy.io.utils import get_reference_info
 
@@ -93,8 +96,38 @@ class BaseEnv(object):
             using CMC.
         """
 
-        # TODO: Split this into several functions, which can
-        # be reused in `set_step_size`
+        # Rollouts!
+        self.do_rollout = env_dto['do_rollout']
+        self.rollout_env = RolloutEnvironment(
+            None,
+            env_dto['n_rollouts'],
+            env_dto['backup_size'],
+            env_dto['extra_n_steps'],
+        )
+
+        self._init_generic_env(
+            input_volume,
+            tracking_mask,
+            target_mask,
+            seeding_mask,
+            peaks,
+            env_dto,
+            include_mask,
+            exclude_mask
+        )
+
+    def _init_generic_env(
+        self,
+        input_volume: MRIDataVolume,
+        tracking_mask: MRIDataVolume,
+        target_mask: MRIDataVolume,
+        seeding_mask: MRIDataVolume,
+        peaks: MRIDataVolume,
+        env_dto: dict,
+        include_mask: MRIDataVolume = None,
+        exclude_mask: MRIDataVolume = None
+    ) -> None:
+        # TODO: Split this into several functions, which can be reused in `set_step_size`
 
         # Reference file
         self.reference = env_dto['reference']
@@ -873,6 +906,9 @@ class BaseEnv(object):
         which streamlines should stop.
         """
         pass
+
+    def set_rollout_agent(self, agent: ActorCritic):
+        self.rollout_env.set_rollout_agent(agent)
 
     def render(
         self,
