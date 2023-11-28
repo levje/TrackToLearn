@@ -180,17 +180,15 @@ class TrackingEnvironment(BaseEnv):
             (self.continue_idx[~stopping],
              self.continue_idx[stopping])
 
-        # Keep the reason why tracking stopped
-        self.flags[
-            self.stopping_idx] = new_flags[stopping]
-
-
-        # Jeremi
         # Before declaring the trajectory over, we will backtrack a few steps on each failed trajectory and rollout a few times
         # for each failed trajectory and take the new trajectory that maximises a certain parameter (Oracle's value, or distance
         # to the border for example).
+        before_rollout_stopping_idx = self.stopping_idx.copy()
         if self.do_rollout and self.rollout_env.is_rollout_agent_set():
-            new_streamlines = self.rollout_env.rollout(
+
+            before_new_flags = new_flags.copy()
+
+            new_streamlines, new_continuing_streamlines, stopping_idx, stopping_flags = self.rollout_env.rollout(
                                     self.streamlines,
                                     self.stopping_idx,
                                     new_flags[stopping],
@@ -201,6 +199,16 @@ class TrackingEnvironment(BaseEnv):
                                     prob=0.1)
 
             self.streamlines = new_streamlines
+            self.new_continue_idx = np.concatenate((self.new_continue_idx, new_continuing_streamlines))
+            self.stopping_idx = stopping_idx  # TODO: Make sure this is correct
+            new_flags[stopping] = stopping_flags  # TODO: Make sure this is correct
+
+            after_new_flags = new_flags.copy()
+
+
+        # Keep the reason why tracking stopped
+        self.flags[
+            before_rollout_stopping_idx] = new_flags[stopping]
 
         # Keep which trajectory is over
         self.dones[self.stopping_idx] = 1

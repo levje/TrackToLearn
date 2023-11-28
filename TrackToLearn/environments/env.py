@@ -95,16 +95,6 @@ class BaseEnv(object):
             Mask representing the tracking no-go zones. Only useful if
             using CMC.
         """
-
-        # Rollouts!
-        self.do_rollout = env_dto['do_rollout']
-        self.rollout_env = RolloutEnvironment(
-            None,
-            env_dto['n_rollouts'],
-            env_dto['backup_size'],
-            env_dto['extra_n_steps'],
-        )
-
         self._init_generic_env(
             input_volume,
             tracking_mask,
@@ -115,6 +105,17 @@ class BaseEnv(object):
             include_mask,
             exclude_mask
         )
+
+        # Rollouts!
+        self.do_rollout = env_dto['do_rollout']
+        self.rollout_env = RolloutEnvironment(
+            None,
+            env_dto['n_rollouts'],
+            env_dto['backup_size'],
+            env_dto['extra_n_steps'],
+            self.max_nb_steps
+        )
+
 
     def _init_generic_env(
         self,

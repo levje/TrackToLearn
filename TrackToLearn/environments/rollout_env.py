@@ -19,13 +19,14 @@ class RolloutEnvironment(object):
                  n_rollouts: int = 5,  # Nb of rollouts to try
                  backup_size: int = 1,  # Nb of steps we are backtracking
                  extra_n_steps: int = 6,  # Nb of steps further we need to compare the different rollouts
+                 max_streamline_steps: int = 256  # Max length of a streamline
                  ):
-
 
         self.rollout_agent = agent
         self.n_rollouts = n_rollouts
         self.backup_size = backup_size
         self.extra_n_steps = extra_n_steps
+        self.max_streamline_steps = max_streamline_steps
 
     # Overrides the set_rollout_agent from the BaseEnv
     def set_rollout_agent(self, rollout_agent: ActorCritic):
@@ -89,79 +90,100 @@ class RolloutEnvironment(object):
             format_state_func: Callable[[np.ndarray], np.ndarray],
             format_action_func: Callable[[np.ndarray], np.ndarray],
             prob: float = 0.1
-    ):
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
         # creating the agent before the environment.
         if self.rollout_agent is None:
             print("Rollout: no agent specified. Rollout aborted.")
-            return streamlines
+            return streamlines, np.array([], dtype=stopping_idx.dtype), stopping_idx, stopping_flags
 
         backtrackable_mask = self._get_backtrackable_indices(stopping_flags)
-        backtrackable_idx = np.where(backtrackable_mask)[0]
+        backtrackable_idx = stopping_idx[backtrackable_mask]
         backtrackable_streamlines = streamlines[backtrackable_idx, :, :]
 
         # Backtrack the streamlines
         backup_length = current_length - self.backup_size
-        if backtrackable_mask.size > 0: # and backup_length > 1:  # To keep the initial point
-            backtrackable_streamlines[:, backup_length:current_length, :] = 0  # Backtrack on backup_length
-            rollouts = np.repeat(backtrackable_streamlines[None, ...], self.n_rollouts,
-                                 axis=0)  # Contains the different rollouts
 
-            max_rollout_length = current_length + self.extra_n_steps
-
-            rollouts_continue_idx = np.repeat(backtrackable_idx[None, ...], self.n_rollouts, axis=0)
-
-            while backup_length < max_rollout_length:
-                for rollout in range(self.n_rollouts):
-
-                    # Grow continuing streamlines one step forward
-                    state = format_state_func(rollouts[rollout, rollouts_continue_idx[rollout, ...], :backup_length, :])
-
-                    with torch.no_grad():
-                        actions = self.rollout_agent.select_action(state=state, probabilistic=prob).to(device='cpu', copy=True).numpy()
-                    new_directions = format_action_func(actions)
-                    rollouts[rollout, :, backup_length, :] = np.add(rollouts[rollout, :, backup_length - 1, :], new_directions)
-
-                    # Get stopping and keeping indexes.
-                    should_stop, new_flags = self._compute_stopping_flags(
-                        rollouts[rollout, rollouts_continue_idx[rollout, ...], :backup_length + 1, :],
-                        stopping_criteria
-                    )
-
-                    # I'm here
-                    # See which trajectories is stopping or continuing
-                    self.not_stopping = np.logical_not(should_stop)
-                    self.new_continue_idx, self.stopping_idx = (rollouts_continue_idx[rollout, ~should_stop],
-                                                                rollouts_continue_idx[rollout, should_stop])
-
-                    # Keep the reason why tracking stopped (don't delete a streamline that reached the target!)
-                    self.flags[self.stopping_idx] = new_flags[should_stop]
-
-                backup_length += 1
+        if backtrackable_mask.size <= 0 or backup_length <= 1:
+            # Can't backtrack, because we're at the start or every streamline ends correctly (in the target).
+            return streamlines, np.array([], dtype=stopping_idx.dtype), stopping_idx, stopping_flags
 
 
+        streamlines[backtrackable_idx, backup_length:current_length, :] = 0  # Backtrack on backup_length
+        rollouts = np.repeat(streamlines[None, ...], self.n_rollouts,
+                             axis=0)  # Contains the different rollouts
 
-            # Get the best rollout for each streamline.
-            best_rollouts = self._filter_best_rollouts(rollouts)
+        max_rollout_length = min(current_length + self.extra_n_steps, self.max_streamline_steps)
 
-            # Squash the retained rollouts to the current_length
-            best_rollouts[:, current_length:, :] = 0
+        rollouts_continue_idx = np.repeat(backtrackable_idx[None, ...], self.n_rollouts, axis=0)
 
-            # TODO: Replace the original streamlines with the best rollouts.
-            valid_rollouts_idx = best_rollouts
+        # Every streamline is continuing, thus no stopping flag for each of them
+        flags = np.zeros((self.n_rollouts, backtrackable_streamlines.shape[0]), dtype=int)
 
-            # TODO: Change the done state of the streamlines that are valid.
+        while backup_length < max_rollout_length:
 
-        return streamlines  # TODO: also return the new stopping and the new flags
+            for rollout in range(self.n_rollouts):
+
+                # Grow continuing streamlines one step forward
+                test1=rollouts_continue_idx[rollout, ...]
+                test2=rollouts[rollout, test1, :backup_length, :]
+                state = format_state_func(rollouts[rollout, rollouts_continue_idx[rollout, ...], :backup_length, :])
+
+                with torch.no_grad():
+                    actions = self.rollout_agent.select_action(state=state, probabilistic=prob).to(device='cpu', copy=True).numpy()
+                new_directions = format_action_func(actions)
+                rollouts[rollout, backtrackable_idx, backup_length, :] = rollouts[rollout, backtrackable_idx, backup_length - 1, :] + new_directions
+
+                # Get continuing streamlines that should stop and their stopping flag
+                should_stop, new_flags = self._compute_stopping_flags(
+                    rollouts[rollout, rollouts_continue_idx[rollout, ...], :backup_length + 1, :],
+                    stopping_criteria
+                )
+
+                # I'm here
+                # See which trajectories is stopping or continuing
+                new_continue_idx, stopping_idx = (rollouts_continue_idx[rollout, ~should_stop],
+                                                  rollouts_continue_idx[rollout, should_stop])
+                rollouts_continue_idx[rollout, ...] = new_continue_idx
+
+                # Keep the reason why tracking stopped (don't delete a streamline that reached the target!)
+                flags[rollout, stopping_idx] = new_flags[should_stop]
+
+            backup_length += 1
+
+
+
+        # Get the best rollout for each streamline.
+        new_streamlines, new_flags = self._filter_best_rollouts(rollouts, flags)
+
+        # Squash the retained rollouts to the current_length
+        new_streamlines[:, current_length + 1:, :] = 0
+
+        # TODO: Replace the original streamlines with the best rollouts.
+        streamlines[:, :, :] = new_streamlines
+        stopping_flags[backtrackable_mask] = new_flags  # Remove? Should we overwrite the rollouts/streamlines that are still failing?
+
+        mask = new_flags > 0
+
+        # Get new continuing streamlines' indexes in the full streamlines array
+        continuing_rollouts = np.where(new_flags == 0)[0]
+        new_continuing_streamlines = stopping_idx[continuing_rollouts]
+
+        # Remove stopping flags for the successful rollouts
+        # stopping_flags = stopping_flags[mask]
+        stopping_idx = stopping_idx[mask]
+
+        return streamlines, new_continuing_streamlines, stopping_idx, stopping_flags
 
     def _filter_best_rollouts(self,
-                              all_rollouts: np.ndarray):
+                              rollouts: np.ndarray,
+                              flags):
 
         # rollout_scores = np.zeros(self.n_rollouts)
         # rollout_scores[all_rollouts] = self.get_streamline_score(all_rollouts[rollout, :, :, :])
 
         # This should use the oracle
-        return all_rollouts[0, ...]
+        return rollouts[0, ...], flags[0, :]
 
     @staticmethod
     def _get_backtrackable_indices(
