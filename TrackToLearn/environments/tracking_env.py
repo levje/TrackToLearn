@@ -26,7 +26,7 @@ class TrackingEnvironment(BaseEnv):
     def _is_stopping(
         self,
         streamlines: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """ Check which streamlines should stop or not according to the
         predefined stopping criteria
 
@@ -197,6 +197,7 @@ class TrackingEnvironment(BaseEnv):
                                     self.length,
                                     self.stopping_criteria,
                                     self._format_state,
+                                    self._format_actions,
                                     prob=0.1)
 
             self.streamlines = new_streamlines

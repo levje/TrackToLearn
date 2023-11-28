@@ -852,7 +852,7 @@ class BaseEnv(object):
         self,
         streamlines: np.ndarray,
         stopping_criteria: Dict[StoppingFlags, Callable]
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """ Checks which streamlines should stop and which ones should
         continue.
 
