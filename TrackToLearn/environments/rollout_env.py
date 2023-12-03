@@ -123,7 +123,7 @@ class RolloutEnvironment(object):
         flags = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=int)
 
         end_preproc = time.time()
-        print("=== Preprocessing time: ", end_preproc - start_preproc)
+        #print("=== Preprocessing time: ", end_preproc - start_preproc)
 
         loop_start = time.time()
         while backup_length < max_rollout_length and not all(np.size(arr) == 0 for arr in rollouts_continue_idx):
@@ -163,7 +163,7 @@ class RolloutEnvironment(object):
             backup_length += 1
 
         loop_end = time.time()
-        print("=== Full rollouts loop time: ", loop_end - loop_start)
+        #print("=== Full rollouts loop time: ", loop_end - loop_start)
 
         rest_start = time.time()
 
@@ -187,7 +187,7 @@ class RolloutEnvironment(object):
         in_stopping_idx = in_stopping_idx[mask]
 
         rest_end = time.time()
-        print("=== Rest time: ", rest_end - rest_start)
+        #print("=== Rest time: ", rest_end - rest_start)
 
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
 

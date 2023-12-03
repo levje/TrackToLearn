@@ -16,6 +16,11 @@ npv=33
 min_length=20
 max_length=200
 
+n_rollouts=5
+backup_size=1
+extra_n_steps=10
+roll_n_steps=1
+
 EXPERIMENT=$1
 ID=$2
 
@@ -57,6 +62,11 @@ do
         --binary_stopping_threshold=0.1 \
         --fa_map="$DATASET_FOLDER"/datasets/${SUBJECT_ID}/dti/"${SUBJECT_ID}"_fa.nii.gz \
         --scoring_data="$SCORING_DATA"
+	--do_rollout \
+      	--n_rollouts=$n_rollouts \
+	--backup_size=$backup_size \
+	--extra_n_steps=$extra_n_steps \
+	--roll_n_steps=$roll_n_steps
 
       validation_folder=$DEST_FOLDER/scoring_"${prob}"_"${SUBJECT_ID}"_${npv}
 
@@ -64,10 +74,10 @@ do
 
       mv $DEST_FOLDER/tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}".tck $validation_folder/
 
-      if [[ -d ${validation_folder}/scoring ]]; then
-        rm -r $validation_folder/scoring
-      fi
-      ./scripts/tractometer.sh $validation_folder/${filename} $validation_folder/scoring $SCORING_DATA
+      #if [[ -d ${validation_folder}/scoring ]]; then
+      #  rm -r $validation_folder/scoring
+      #fi
+      ./scripts/tractometer_fibercup.sh $validation_folder/${filename} $validation_folder/scoring_r5_10extra $SCORING_DATA
     done
   done
 done
