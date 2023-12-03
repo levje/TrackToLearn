@@ -92,6 +92,8 @@ class RolloutEnvironment(object):
             format_action_func: Callable[[np.ndarray], np.ndarray],
             prob: float = 0.1
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        start_preproc = time.time()
+
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
         # creating the agent before the environment.
         if self.rollout_agent is None:
@@ -121,10 +123,13 @@ class RolloutEnvironment(object):
         # Every streamline is continuing, thus no stopping flag for each of them
         flags = np.zeros((self.n_rollouts, backtrackable_streamlines.shape[0]), dtype=int)
 
+        end_preproc = time.time()
+        print("=== Preprocessing time: ", end_preproc - start_preproc)
+
+        loop_start = time.time()
         while backup_length < max_rollout_length and not all(np.size(arr) == 0 for arr in rollouts_continue_idx):
 
             for rollout in range(self.n_rollouts):
-                loop_start = time.time()
 
                 if rollouts_continue_idx[rollout].size <= 0:
                     # No more streamlines to continue
@@ -156,10 +161,12 @@ class RolloutEnvironment(object):
                 relative_stopping_indices = np.where(np.isin(backtrackable_idx, stopping_idx))[0]
                 flags[rollout, relative_stopping_indices] = new_flags[should_stop]  # TODO: should_stop is a boolean array, not an index, we need to provide the index of the streamlines that stopped
 
-                loop_end = time.time()
-                print("=== Rollout loop time: ", loop_end - loop_start)
-
             backup_length += 1
+
+        loop_end = time.time()
+        print("=== Full rollouts loop time: ", loop_end - loop_start)
+
+        rest_start = time.time()
 
         # Get the best rollout for each streamline.
         new_streamlines, new_flags = self._filter_best_rollouts(rollouts, flags)
@@ -179,6 +186,9 @@ class RolloutEnvironment(object):
 
         # Remove stopping flags for the successful rollouts
         in_stopping_idx = in_stopping_idx[mask]
+
+        rest_end = time.time()
+        print("=== Rest time: ", rest_end - rest_start)
 
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
 
