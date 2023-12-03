@@ -9,6 +9,7 @@ from TrackToLearn.datasets.utils import (MRIDataVolume, SubjectData,
                                          set_sh_order_basis)
 from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
+import time
 
 
 class RolloutEnvironment(object):
@@ -123,6 +124,8 @@ class RolloutEnvironment(object):
         while backup_length < max_rollout_length and not all(np.size(arr) == 0 for arr in rollouts_continue_idx):
 
             for rollout in range(self.n_rollouts):
+                loop_start = time.time()
+
                 if rollouts_continue_idx[rollout].size <= 0:
                     # No more streamlines to continue
                     continue
@@ -152,6 +155,9 @@ class RolloutEnvironment(object):
                 # Keep the reason why tracking stopped (don't delete a streamline that reached the target!)
                 relative_stopping_indices = np.where(np.isin(backtrackable_idx, stopping_idx))[0]
                 flags[rollout, relative_stopping_indices] = new_flags[should_stop]  # TODO: should_stop is a boolean array, not an index, we need to provide the index of the streamlines that stopped
+
+                loop_end = time.time()
+                print("=== Rollout loop time: ", loop_end - loop_start)
 
             backup_length += 1
 
