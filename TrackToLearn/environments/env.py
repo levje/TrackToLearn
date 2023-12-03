@@ -108,6 +108,7 @@ class BaseEnv(object):
 
         # Rollouts!
         self.do_rollout = env_dto['do_rollout']
+        self.roll_n_steps = env_dto['roll_n_steps']
         self.rollout_env = RolloutEnvironment(
             None,
             env_dto['n_rollouts'],

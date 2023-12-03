@@ -97,6 +97,7 @@ class TrackToLearnValidation(TrackToLearnExperiment):
         self.backup_size = valid_dto['backup_size']
         self.n_rollouts = valid_dto['n_rollouts']
         self.extra_n_steps = valid_dto['extra_n_steps']
+        self.roll_n_steps = valid_dto['roll_n_steps']
 
         self.compute_reward = True
 

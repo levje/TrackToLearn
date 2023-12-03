@@ -102,7 +102,6 @@ class RolloutEnvironment(object):
 
         backtrackable_mask = self._get_backtrackable_indices(in_stopping_flags)
         backtrackable_idx = in_stopping_idx[backtrackable_mask]
-        backtrackable_streamlines = streamlines[backtrackable_idx, :, :]
 
         # Backtrack the streamlines
         backup_length = current_length - self.backup_size
@@ -121,7 +120,7 @@ class RolloutEnvironment(object):
         rollouts_continue_idx = [backtrackable_idx for _ in range(self.n_rollouts)]  # np.repeat(backtrackable_idx[None, ...], self.n_rollouts, axis=0)
 
         # Every streamline is continuing, thus no stopping flag for each of them
-        flags = np.zeros((self.n_rollouts, backtrackable_streamlines.shape[0]), dtype=int)
+        flags = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=int)
 
         end_preproc = time.time()
         print("=== Preprocessing time: ", end_preproc - start_preproc)

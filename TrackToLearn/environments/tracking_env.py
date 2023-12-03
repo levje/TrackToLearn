@@ -186,10 +186,10 @@ class TrackingEnvironment(BaseEnv):
         # for each failed trajectory and take the new trajectory that maximises a certain parameter (Oracle's value, or distance
         # to the border for example).
         before_rollout_stopping_idx = self.stopping_idx.copy()
-        if self.do_rollout and self.rollout_env.is_rollout_agent_set():  # TODO: Rollout each n steps instead of each step, otherwise it's very slow
-
-            before_new_flags = new_flags.copy()
-
+        if self.do_rollout \
+            and self.rollout_env.is_rollout_agent_set() \
+            and (self.stopping_idx.size > 0) \
+            and (self.length % self.roll_n_steps == 0):
             rollout_start_time = time.time()
             new_streamlines, new_continuing_streamlines, stopping_idx, stopping_flags = self.rollout_env.rollout(
                                     self.streamlines,
@@ -208,9 +208,6 @@ class TrackingEnvironment(BaseEnv):
             self.new_continue_idx = np.concatenate((self.new_continue_idx, new_continuing_streamlines))
             self.stopping_idx = stopping_idx  # TODO: Make sure this is correct
             new_flags[stopping] = stopping_flags  # TODO: Make sure this is correct
-
-            after_new_flags = new_flags.copy()
-
 
         # Keep the reason why tracking stopped
         self.flags[

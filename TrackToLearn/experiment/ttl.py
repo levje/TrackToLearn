@@ -162,7 +162,8 @@ class TrackToLearnExperiment(Experiment):
             'do_rollout': self.do_rollout,
             'backup_size': self.backup_size,
             'n_rollouts': self.n_rollouts,
-            'extra_n_steps': self.extra_n_steps
+            'extra_n_steps': self.extra_n_steps,
+            'roll_n_steps': self.roll_n_steps
         }
 
         if noisy:

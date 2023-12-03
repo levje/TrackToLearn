@@ -230,6 +230,7 @@ def add_rollout_args(parser: ArgumentParser):
                         help='Number of rollouts to try out for a single failing streamline.')
     roll.add_argument('--extra_n_steps', type=int,
                         help='Number of steps ahead to compare the rollouts against each other.')
+    roll.add_argument('--roll_n_steps', help="Perform rollout each n steps to avoid doing rollouts each step", type=int, default=1)
 
 
 def add_tractometer_args(parser: ArgumentParser):
