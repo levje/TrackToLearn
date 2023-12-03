@@ -9,6 +9,8 @@ from TrackToLearn.datasets.utils import (MRIDataVolume, SubjectData,
                                          set_sh_order_basis)
 from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
+
+from TrackToLearn.environments.reward import Reward
 import time
 
 
@@ -90,6 +92,7 @@ class RolloutEnvironment(object):
             stopping_criteria: dict[StoppingFlags, Callable],
             format_state_func: Callable[[np.ndarray], np.ndarray],
             format_action_func: Callable[[np.ndarray], np.ndarray],
+            streamline_reward: Reward,
             prob: float = 0.1
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         start_preproc = time.time()
@@ -158,17 +161,15 @@ class RolloutEnvironment(object):
 
                 # Keep the reason why tracking stopped (don't delete a streamline that reached the target!)
                 relative_stopping_indices = np.where(np.isin(backtrackable_idx, stopping_idx))[0]
-                flags[rollout, relative_stopping_indices] = new_flags[should_stop]  # TODO: should_stop is a boolean array, not an index, we need to provide the index of the streamlines that stopped
+                flags[rollout, relative_stopping_indices] = new_flags[should_stop]
 
             backup_length += 1
 
-        loop_end = time.time()
-        #print("=== Full rollouts loop time: ", loop_end - loop_start)
-
-        rest_start = time.time()
-
         # Get the best rollout for each streamline.
-        new_streamlines, new_flags = self._filter_best_rollouts(rollouts, flags)
+        filtering_start_time = time.time()
+        new_streamlines, new_flags = self._filter_best_rollouts(rollouts, flags, streamline_reward, dones=None)
+        filtering_end_time = time.time()
+        print("=== Filtering time: ", filtering_end_time - filtering_start_time)
 
         # Squash the retained rollouts to the current_length
         new_streamlines[:, current_length + 1:, :] = 0
@@ -186,19 +187,20 @@ class RolloutEnvironment(object):
         # Remove stopping flags for the successful rollouts
         in_stopping_idx = in_stopping_idx[mask]
 
-        rest_end = time.time()
-        #print("=== Rest time: ", rest_end - rest_start)
-
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
 
     def _filter_best_rollouts(self,
                               rollouts: np.ndarray,
-                              flags):
+                              flags,
+                              dones,
+                              streamline_reward: Reward):
 
-        # rollout_scores = np.zeros(self.n_rollouts)
-        # rollout_scores[all_rollouts] = self.get_streamline_score(all_rollouts[rollout, :, :, :])
+        rollouts_scores = np.zeros((self.n_rollouts, rollouts.shape[1]), dtype=np.float32)
+        for i, rollout in enumerate(rollouts):
+            rollouts_scores[i] = streamline_reward(rollout, dones=dones)
 
-        # This should use the oracle
+        # TODO: Filter based on the calculated scores
+
         return rollouts[0, ...], flags[0, :]
 
     @staticmethod
