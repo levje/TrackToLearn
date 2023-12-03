@@ -12,6 +12,8 @@ from TrackToLearn.environments.rollout_env import RolloutEnvironment
 from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
 
+import time
+
 
 class TrackingEnvironment(BaseEnv):
     """ Tracking environment. This environment is used to track
@@ -184,10 +186,11 @@ class TrackingEnvironment(BaseEnv):
         # for each failed trajectory and take the new trajectory that maximises a certain parameter (Oracle's value, or distance
         # to the border for example).
         before_rollout_stopping_idx = self.stopping_idx.copy()
-        if self.do_rollout and self.rollout_env.is_rollout_agent_set():
+        if self.do_rollout and self.rollout_env.is_rollout_agent_set():  # TODO: Rollout each n steps instead of each step, otherwise it's very slow
 
             before_new_flags = new_flags.copy()
 
+            rollout_start_time = time.time()
             new_streamlines, new_continuing_streamlines, stopping_idx, stopping_flags = self.rollout_env.rollout(
                                     self.streamlines,
                                     self.stopping_idx,
@@ -197,6 +200,9 @@ class TrackingEnvironment(BaseEnv):
                                     self._format_state,
                                     self._format_actions,
                                     prob=0.1)
+
+            rollout_end_time = time.time()
+            print(f"Rollout time: {rollout_end_time - rollout_start_time}")
 
             self.streamlines = new_streamlines
             self.new_continue_idx = np.concatenate((self.new_continue_idx, new_continuing_streamlines))
