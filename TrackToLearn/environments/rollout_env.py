@@ -96,11 +96,14 @@ class RolloutEnvironment(object):
             print("Rollout: no agent specified. Rollout aborted.")
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
-        backtrackable_mask = self._get_backtrackable_indices(in_stopping_flags)
-        backtrackable_idx = in_stopping_idx[backtrackable_mask]
-
         # Backtrack the streamlines
         backup_length = current_length - self.backup_size
+
+        if backup_length == current_length:  # We don't backtrack in that case, there's no need to compute the rest
+            return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
+
+        backtrackable_mask = self._get_backtrackable_indices(in_stopping_flags)
+        backtrackable_idx = in_stopping_idx[backtrackable_mask]
 
         if backtrackable_mask.size <= 0 or backup_length <= 1:
             # Can't backtrack, because we're at the start or every streamline ends correctly (in the target).
@@ -130,7 +133,7 @@ class RolloutEnvironment(object):
                 state = format_state_func(rollouts[rollout, rollouts_continue_idx[rollout], :backup_length, :])
 
                 with torch.no_grad():
-                    actions = self.rollout_agent.select_action(state=state, probabilistic=prob).to(device='cpu', copy=True).numpy()
+                    actions = self.rollout_agent.select_action(state=state).to(device='cpu', copy=True).numpy()
                 new_directions = format_action_func(actions)
 
                 # Step forward
