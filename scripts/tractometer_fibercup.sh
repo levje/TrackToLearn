@@ -31,7 +31,7 @@ fi
 
 echo '------------- TRACTOMETRY ------------'
 scil_score_tractogram.py $tractogram $config_file_tractometry $out_dir --no_empty \
-    --reference $scoring_data/../dti/fibercup_fa.nii.gz --gt_dir $scoring_data --no_bbox_check --unique --compute_ic -v;
+    --reference $scoring_data/../dti/fibercup_fa.nii.gz --gt_dir $scoring_data --no_bbox_check --unique --compute_ic -v --dilate 3;
 
 echo '----------------  DONE ---------------'
 

@@ -18,7 +18,7 @@ npv=33
 min_length=20
 max_length=200
 
-list_n_rollouts=(10 20)
+list_n_rollouts=(2)
 list_backup_size=(1)
 list_extra_n_steps=(5)
 list_roll_n_steps=(1)
@@ -74,27 +74,21 @@ do
              --use_gpu \
              --binary_stopping_threshold=0.1 \
              --fa_map="$DATASET_FOLDER"/datasets/${SUBJECT_ID}/dti/"${SUBJECT_ID}"_fa.nii.gz \
-             --scoring_data="$SCORING_DATA" \
-	     --do_rollout \
-      	     --n_rollouts=$n_rollouts \
-	     --backup_size=$backup_size \
-	     --extra_n_steps=$extra_n_steps \
-	     --roll_n_steps=$roll_n_steps \
 	     --dense_oracle_weighting=1.0 \
 	     --oracle_checkpoint="epoch_49_fibercup_transformer.ckpt"
-      	     
+
 	     validation_folder=$DEST_FOLDER/scoring_"${prob}"_"${SUBJECT_ID}"_${npv}
 
              mkdir -p $validation_folder
 
       	     mv $DEST_FOLDER/tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}".tck $validation_folder/
 
-      	     outdir=$validation_folder/real_scoring_oracle_${n_rollouts}r_${backup_size}b_${extra_n_steps}x_${roll_n_steps}n
+      	     outdir=$validation_folder/ref_scoring_dense_oracle_w1
 
       	     if [[ -d $outdir ]]; then
          	rm -r $outdir
       	     fi
-      	     
+
 	     ./scripts/tractometer_fibercup.sh $validation_folder/${filename} $outdir $SCORING_DATA
      	         done
       	      done

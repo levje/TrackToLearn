@@ -105,7 +105,7 @@ class RolloutEnvironment(object):
         backtrackable_mask = self._get_backtrackable_indices(in_stopping_flags)
         backtrackable_idx = in_stopping_idx[backtrackable_mask]
 
-        if backtrackable_mask.size <= 0 or backup_length <= 1:
+        if backtrackable_idx.size <= 0 or backup_length <= 1:
             # Can't backtrack, because we're at the start or every streamline ends correctly (in the target).
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
@@ -133,7 +133,7 @@ class RolloutEnvironment(object):
                 state = format_state_func(rollouts[rollout, rollouts_continue_idx[rollout], :backup_length, :])
 
                 with torch.no_grad():
-                    actions = self.rollout_agent.select_action(state=state).to(device='cpu', copy=True).numpy()
+                    actions = self.rollout_agent.select_action(state=state, probabilistic=prob).to(device='cpu', copy=True).numpy()
                 new_directions = format_action_func(actions)
 
                 # Step forward
@@ -167,7 +167,7 @@ class RolloutEnvironment(object):
         streamlines[backtrackable_idx, :, :] = best_rollouts
         in_stopping_flags[backtrackable_mask] = new_flags  # Remove? Should we overwrite the rollouts/streamlines that are still failing?
 
-        mask = new_flags > 0
+        mask = in_stopping_flags > 0
 
         # Get new continuing streamlines' indexes in the full streamlines array
         continuing_rollouts = np.where(new_flags == 0)[0]
@@ -208,5 +208,5 @@ class RolloutEnvironment(object):
         For example, if a streamline stopped because of STOPPING_TARGET, we might not want to backtrack since the
         streamline ends in the gray matter.
         """
-        flag1 = np.not_equal(stopping_flags, StoppingFlags.STOPPING_TARGET)
+        flag1 = np.not_equal(stopping_flags, StoppingFlags.STOPPING_TARGET.value)
         return flag1

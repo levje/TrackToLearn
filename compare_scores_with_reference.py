@@ -34,7 +34,7 @@ def main(args):
 
     comp_string = ""
 
-    comp_string += "Score comparison between {} and {}\n".format(args.reference, args.scores)
+    comp_string += "Reference vs Scores ({} and {})\n".format(args.reference, args.scores)
     comp_string += 'streamlines: {:.3f} vs {:.3f},\tdelta: {:.3f}\n'.format(ref_total_streamlines, sco_total_streamlines, sco_total_streamlines - ref_total_streamlines)
     comp_string += 'VS:          {:.3f} vs {:.3f},\tdelta: {:.3f}\n'.format(ref_VS, sco_VS, sco_VS - ref_VS)
     comp_string += 'VB:          {:.3f} vs {:.3f},\t\tdelta: {:.3f}\n'.format(ref_VB, sco_VB, sco_VB - ref_VB)
@@ -53,3 +53,4 @@ def main(args):
 if '__main__' == __name__:
     parser = generate_argument_parser()
     main(parser.parse_args())
+

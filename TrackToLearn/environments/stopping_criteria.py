@@ -5,6 +5,7 @@ from dipy.io.stateful_tractogram import Space, StatefulTractogram, Tractogram
 from dipy.io.streamline import save_tractogram
 from scipy.ndimage import map_coordinates, spline_filter
 
+from TrackToLearn.environments.utils import has_reached_gm
 from TrackToLearn.environments.interpolation import \
     nearest_neighbor_interpolation
 from TrackToLearn.oracles.oracle import OracleSingleton
@@ -130,6 +131,23 @@ class AngularErrorCriterion(object):
         # Get alignment with the most aligned peak
         min_distance = np.amin(distance, axis=-1)
         return min_distance > self.max_theta_rad
+
+
+class TargetStoppingCriterion(object):
+    def __init__(self,
+                 mask: np.ndarray,
+                 threshold: float = 0.0,
+                 min_nb_steps: int = 10):
+
+        self.mask = mask
+        self.threshold = threshold
+        self.min_nb_steps = min_nb_steps
+
+    def __call__(
+            self,
+            streamlines: np.ndarray
+    ):
+        return has_reached_gm(streamlines, self.mask, self.threshold, self.min_nb_steps)
 
 
 class BinaryStoppingCriterion(object):

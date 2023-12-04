@@ -33,10 +33,10 @@ from TrackToLearn.environments.oracle_reward import OracleReward
 from TrackToLearn.environments.reward import RewardFunction
 from TrackToLearn.environments.tractometer_reward import TractometerReward
 from TrackToLearn.environments.stopping_criteria import (
-    BinaryStoppingCriterion, CmcStoppingCriterion, OracleStoppingCriterion,
+    BinaryStoppingCriterion, CmcStoppingCriterion, OracleStoppingCriterion, TargetStoppingCriterion,
     StoppingFlags)
 from TrackToLearn.environments.utils import (  # is_looping,
-    is_too_curvy, is_too_long)
+    is_too_curvy, is_too_long, has_reached_gm)
 from TrackToLearn.utils.utils import from_polar, from_sphere, normalize_vectors
 
 
@@ -250,6 +250,12 @@ class BaseEnv(object):
         self.stopping_criteria[
             StoppingFlags.STOPPING_CURVATURE] = \
             functools.partial(is_too_curvy, max_theta=theta)
+
+        self.stopping_criteria[StoppingFlags.STOPPING_TARGET] = TargetStoppingCriterion(
+            self.target_mask.data,
+            threshold=0.5,  # TODO: What should be a good threshold?
+            min_nb_steps=int(min_length_mm/step_size_mm)  # TODO: What should be a good number of minimum steps?
+        )
 
         # Streamline loop criterion (not used, too slow)
         # self.stopping_criteria[
