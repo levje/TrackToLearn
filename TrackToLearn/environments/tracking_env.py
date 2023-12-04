@@ -199,6 +199,7 @@ class TrackingEnvironment(BaseEnv):
                                     self.stopping_criteria,
                                     self._format_state,
                                     self._format_actions,
+                                    self.reward_function,
                                     prob=0.1)
 
             rollout_end_time = time.time()

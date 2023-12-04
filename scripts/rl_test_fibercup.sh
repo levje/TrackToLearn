@@ -61,13 +61,14 @@ do
         --use_gpu \
         --binary_stopping_threshold=0.1 \
         --fa_map="$DATASET_FOLDER"/datasets/${SUBJECT_ID}/dti/"${SUBJECT_ID}"_fa.nii.gz \
-        --scoring_data="$SCORING_DATA"
+        --scoring_data="$SCORING_DATA" \
 	--do_rollout \
       	--n_rollouts=$n_rollouts \
 	--backup_size=$backup_size \
 	--extra_n_steps=$extra_n_steps \
-	--roll_n_steps=$roll_n_steps
-
+	--roll_n_steps=$roll_n_steps \
+	--dense_oracle_weighting=0.0 \
+	--oracle_checkpoint="epoch_49_fibercup_transformer.ckpt"
       validation_folder=$DEST_FOLDER/scoring_"${prob}"_"${SUBJECT_ID}"_${npv}
 
       mkdir -p $validation_folder

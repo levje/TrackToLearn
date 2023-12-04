@@ -10,7 +10,7 @@ from TrackToLearn.datasets.utils import (MRIDataVolume, SubjectData,
 from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
 
-from TrackToLearn.environments.reward import Reward
+from TrackToLearn.environments.reward import RewardFunction
 import time
 
 
@@ -77,12 +77,6 @@ class RolloutEnvironment(object):
 
         return should_stop, flags
 
-    def get_streamline_score(self, streamline: np.ndarray):
-        # TODO: Implement with the oracle
-
-        return 0.0
-
-
     def rollout(
             self,
             streamlines: np.ndarray,
@@ -92,10 +86,9 @@ class RolloutEnvironment(object):
             stopping_criteria: dict[StoppingFlags, Callable],
             format_state_func: Callable[[np.ndarray], np.ndarray],
             format_action_func: Callable[[np.ndarray], np.ndarray],
-            streamline_reward: Reward,
+            streamline_reward: RewardFunction,
             prob: float = 0.1
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        start_preproc = time.time()
 
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
         # creating the agent before the environment.
@@ -125,10 +118,6 @@ class RolloutEnvironment(object):
         # Every streamline is continuing, thus no stopping flag for each of them
         flags = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=int)
 
-        end_preproc = time.time()
-        #print("=== Preprocessing time: ", end_preproc - start_preproc)
-
-        loop_start = time.time()
         while backup_length < max_rollout_length and not all(np.size(arr) == 0 for arr in rollouts_continue_idx):
 
             for rollout in range(self.n_rollouts):
@@ -166,16 +155,13 @@ class RolloutEnvironment(object):
             backup_length += 1
 
         # Get the best rollout for each streamline.
-        filtering_start_time = time.time()
-        new_streamlines, new_flags = self._filter_best_rollouts(rollouts, flags, streamline_reward, dones=None)
-        filtering_end_time = time.time()
-        print("=== Filtering time: ", filtering_end_time - filtering_start_time)
+        best_rollouts, new_flags = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, streamline_reward)
 
         # Squash the retained rollouts to the current_length
-        new_streamlines[:, current_length + 1:, :] = 0
+        best_rollouts[:, current_length + 1:, :] = 0
 
         # Replace the original streamlines with the best rollouts.
-        streamlines[:, :, :] = new_streamlines
+        streamlines[backtrackable_idx, :, :] = best_rollouts
         in_stopping_flags[backtrackable_mask] = new_flags  # Remove? Should we overwrite the rollouts/streamlines that are still failing?
 
         mask = new_flags > 0
@@ -192,16 +178,22 @@ class RolloutEnvironment(object):
     def _filter_best_rollouts(self,
                               rollouts: np.ndarray,
                               flags,
-                              dones,
-                              streamline_reward: Reward):
+                              backtrackable_idx: np.ndarray,
+                              streamline_reward: RewardFunction):
 
-        rollouts_scores = np.zeros((self.n_rollouts, rollouts.shape[1]), dtype=np.float32)
-        for i, rollout in enumerate(rollouts):
-            rollouts_scores[i] = streamline_reward(rollout, dones=dones)
+        dones = flags > 0
+        rollouts_scores = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=np.float32)
+        for rollout in range(rollouts.shape[0]):
+            rewards = streamline_reward(rollouts[rollout, backtrackable_idx, ...], dones=dones[rollout, :])[0]
+            rollouts_scores[rollout] = rewards
 
-        # TODO: Filter based on the calculated scores
+        # Filter based on the calculated scores and keep the best rollouts and their according flags
+        best_rollout_indices = np.argmax(rollouts_scores, axis=0)
+        streamline_indices = np.arange(backtrackable_idx.shape[0])
+        best_rollouts = rollouts[best_rollout_indices, streamline_indices, ...]
+        best_flags = flags[best_rollout_indices, streamline_indices]
 
-        return rollouts[0, ...], flags[0, :]
+        return best_rollouts, best_flags
 
     @staticmethod
     def _get_backtrackable_indices(
