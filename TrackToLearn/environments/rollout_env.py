@@ -11,6 +11,7 @@ from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
 
 from TrackToLearn.environments.reward import RewardFunction
+from TrackToLearn.experiment.oracle_validator import OracleValidator
 import time
 
 
@@ -87,6 +88,7 @@ class RolloutEnvironment(object):
             format_state_func: Callable[[np.ndarray], np.ndarray],
             format_action_func: Callable[[np.ndarray], np.ndarray],
             streamline_reward: RewardFunction,
+            oracle_validator: OracleValidator,
             prob: float = 0.1
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
@@ -158,7 +160,7 @@ class RolloutEnvironment(object):
             backup_length += 1
 
         # Get the best rollout for each streamline.
-        best_rollouts, new_flags = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, streamline_reward)
+        best_rollouts, new_flags = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, streamline_reward, oracle_validator)
 
         # Squash the retained rollouts to the current_length
         best_rollouts[:, current_length + 1:, :] = 0
@@ -182,12 +184,13 @@ class RolloutEnvironment(object):
                               rollouts: np.ndarray,
                               flags,
                               backtrackable_idx: np.ndarray,
-                              streamline_reward: RewardFunction):
+                              streamline_reward: RewardFunction,
+                              oracle_validator: OracleValidator):
 
         dones = flags > 0
         rollouts_scores = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=np.float32)
         for rollout in range(rollouts.shape[0]):
-            rewards = streamline_reward(rollouts[rollout, backtrackable_idx, ...], dones=dones[rollout, :])[0]
+            rewards = oracle_validator.evaluate_streamlines(rollouts[rollout, backtrackable_idx, ...])  # streamline_reward(rollouts[rollout, backtrackable_idx, ...], dones=dones[rollout, :])[0]
             rollouts_scores[rollout] = rewards
 
         # Filter based on the calculated scores and keep the best rollouts and their according flags

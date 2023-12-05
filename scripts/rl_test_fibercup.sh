@@ -13,12 +13,12 @@ SCORING_DATA=${DATASET_FOLDER}/datasets/${SUBJECT_ID}/scoring_data
 dataset_file=$DATASET_FOLDER/datasets/${SUBJECT_ID}/${SUBJECT_ID}.hdf5
 reference_file=$DATASET_FOLDER/datasets/${SUBJECT_ID}/masks/${SUBJECT_ID}_wm.nii.gz
 
-n_actor=50000
+n_actor=5000
 npv=33
 min_length=20
 max_length=200
 
-list_n_rollouts=(10 20)
+list_n_rollouts=(2)
 list_backup_size=(1)
 list_extra_n_steps=(5)
 list_roll_n_steps=(1)

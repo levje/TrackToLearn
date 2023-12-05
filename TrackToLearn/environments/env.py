@@ -37,6 +37,7 @@ from TrackToLearn.environments.stopping_criteria import (
     StoppingFlags)
 from TrackToLearn.environments.utils import (  # is_looping,
     is_too_curvy, is_too_long, has_reached_gm)
+from TrackToLearn.experiment.oracle_validator import OracleValidator
 from TrackToLearn.utils.utils import from_polar, from_sphere, normalize_vectors
 
 
@@ -270,15 +271,26 @@ class BaseEnv(object):
         #     self.epsilon,
         #     self.peaks)
 
+        self.oracle_validator = None
+
         # Stopping criterion according to an oracle
-        if self.oracle_checkpoint and self.oracle_stopping_criterion:
-            self.stopping_criteria[
-                StoppingFlags.STOPPING_ORACLE] = OracleStoppingCriterion(
+        if self.oracle_checkpoint:
+
+            self.oracle_validator = OracleValidator(
                 self.oracle_checkpoint,
-                self.min_nb_steps * 5,
                 self.reference,
-                self.affine_vox2rasmm,
                 self.device)
+
+            if self.oracle_stopping_criterion:
+                self.stopping_criteria[
+                    StoppingFlags.STOPPING_ORACLE] = OracleStoppingCriterion(
+                    self.oracle_checkpoint,
+                    self.min_nb_steps * 5,
+                    self.reference,
+                    self.affine_vox2rasmm,
+                    self.device)
+
+
 
         # Mask criterion (either binary or CMC)
         if self.cmc:
