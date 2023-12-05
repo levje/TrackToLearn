@@ -188,7 +188,7 @@ class TrackingEnvironment(BaseEnv):
         before_rollout_stopping_idx = self.stopping_idx.copy()
         if self.do_rollout \
             and self.rollout_env.is_rollout_agent_set() \
-            and self.oracle_validator is not None \
+            and self.oracle_reward is not None \
             and (self.stopping_idx.size > 0) \
             and (self.length % self.roll_n_steps == 0):
             rollout_start_time = time.time()
@@ -200,8 +200,7 @@ class TrackingEnvironment(BaseEnv):
                                     self.stopping_criteria,
                                     self._format_state,
                                     self._format_actions,
-                                    self.reward_function,
-                                    self.oracle_validator,
+                                    self.oracle_reward,
                                     prob=0.1)
 
             rollout_end_time = time.time()

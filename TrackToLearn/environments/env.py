@@ -271,16 +271,8 @@ class BaseEnv(object):
         #     self.epsilon,
         #     self.peaks)
 
-        self.oracle_validator = None
-
         # Stopping criterion according to an oracle
         if self.oracle_checkpoint:
-
-            self.oracle_validator = OracleValidator(
-                self.oracle_checkpoint,
-                self.reference,
-                self.device)
-
             if self.oracle_stopping_criterion:
                 self.stopping_criteria[
                     StoppingFlags.STOPPING_ORACLE] = OracleStoppingCriterion(
@@ -331,6 +323,7 @@ class BaseEnv(object):
         else:
             self.oracle_weighting = env_dto['sparse_oracle_weighting']
 
+        self.oracle_reward = None
         # Reward function and reward factors
         if self.compute_reward:
             # Reward streamline according to alignment with local peaks
@@ -341,7 +334,7 @@ class BaseEnv(object):
             # Reward streamlines for their length
             length_reward = LengthReward(self.max_nb_steps)
             # Reward streamlines according to an oracle
-            oracle_reward = OracleReward(self.oracle_checkpoint,
+            self.oracle_reward = OracleReward(self.oracle_checkpoint,
                                          self.dense_oracle,
                                          self.reference,
                                          self.affine_vox2rasmm,
@@ -363,7 +356,7 @@ class BaseEnv(object):
                 [peaks_reward,
                  target_reward,
                  length_reward,
-                 oracle_reward,
+                 self.oracle_reward,
                  tractometer_reward,
                  cover_reward],
                 [self.alignment_weighting,

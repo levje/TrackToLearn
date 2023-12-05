@@ -10,7 +10,7 @@ from TrackToLearn.datasets.utils import (MRIDataVolume, SubjectData,
 from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
 
-from TrackToLearn.environments.reward import RewardFunction
+from TrackToLearn.environments.reward import Reward
 from TrackToLearn.experiment.oracle_validator import OracleValidator
 import time
 
@@ -87,10 +87,11 @@ class RolloutEnvironment(object):
             stopping_criteria: dict[StoppingFlags, Callable],
             format_state_func: Callable[[np.ndarray], np.ndarray],
             format_action_func: Callable[[np.ndarray], np.ndarray],
-            streamline_reward: RewardFunction,
-            oracle_validator: OracleValidator,
-            prob: float = 0.1
+            oracle_reward: Reward,  # TODO: It's not technically a reward. It's just a score to evaluate the best streamline.
+            prob: float = 0.1,
+            dynamic_prob: bool = False
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        _prob = prob  # Copy for dynamic probability adjustment during rollout
 
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
         # creating the agent before the environment.
@@ -125,6 +126,9 @@ class RolloutEnvironment(object):
 
         while backup_length < max_rollout_length and not all(np.size(arr) == 0 for arr in rollouts_continue_idx):
 
+            if dynamic_prob and backup_length > current_length:
+                _prob = 0.0  # Once we reached where we previously failed, stop exploring and just follow the agent.
+
             for rollout in range(self.n_rollouts):
 
                 if rollouts_continue_idx[rollout].size <= 0:
@@ -135,7 +139,7 @@ class RolloutEnvironment(object):
                 state = format_state_func(rollouts[rollout, rollouts_continue_idx[rollout], :backup_length, :])
 
                 with torch.no_grad():
-                    actions = self.rollout_agent.select_action(state=state, probabilistic=prob).to(device='cpu', copy=True).numpy()
+                    actions = self.rollout_agent.select_action(state=state, probabilistic=_prob).to(device='cpu', copy=True).numpy()
                 new_directions = format_action_func(actions)
 
                 # Step forward
@@ -160,7 +164,7 @@ class RolloutEnvironment(object):
             backup_length += 1
 
         # Get the best rollout for each streamline.
-        best_rollouts, new_flags = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, streamline_reward, oracle_validator)
+        best_rollouts, new_flags = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, oracle_reward)
 
         # Squash the retained rollouts to the current_length
         best_rollouts[:, current_length + 1:, :] = 0
@@ -184,13 +188,13 @@ class RolloutEnvironment(object):
                               rollouts: np.ndarray,
                               flags,
                               backtrackable_idx: np.ndarray,
-                              streamline_reward: RewardFunction,
-                              oracle_validator: OracleValidator):
+                              oracle_reward: Reward  # TODO: It's not technically a reward. It's just a score to evaluate the best streamline.
+                              ):
 
         dones = flags > 0
         rollouts_scores = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=np.float32)
         for rollout in range(rollouts.shape[0]):
-            rewards = oracle_validator.evaluate_streamlines(rollouts[rollout, backtrackable_idx, ...])  # streamline_reward(rollouts[rollout, backtrackable_idx, ...], dones=dones[rollout, :])[0]
+            rewards = oracle_reward(rollouts[rollout, backtrackable_idx, ...], dones=dones[rollout, :])[0]
             rollouts_scores[rollout] = rewards
 
         # Filter based on the calculated scores and keep the best rollouts and their according flags

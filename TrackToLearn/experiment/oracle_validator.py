@@ -43,19 +43,3 @@ class OracleValidator(Validator):
 
         accuracy = (predictions > 0.5).astype(float)
         return {'Oracle': float(np.mean(accuracy))}
-
-    def evaluate_streamlines(self, streamlines: np.ndarray) -> np.ndarray:
-
-        if streamlines.shape[0] == 0:
-            return np.array([])
-
-        batch_size = 4096
-        N = streamlines.shape[0]
-        predictions = np.zeros(N)
-        for i in range(0, N, batch_size):
-            j = i + batch_size
-            batched_streamlines = streamlines[i:j, ...]
-            scores = self.model.predict(batched_streamlines)
-            predictions[i:j] = scores
-
-        return predictions
