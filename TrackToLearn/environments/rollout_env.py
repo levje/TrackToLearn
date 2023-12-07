@@ -12,7 +12,10 @@ from TrackToLearn.environments.stopping_criteria import (
 
 from TrackToLearn.environments.reward import Reward
 from TrackToLearn.experiment.oracle_validator import OracleValidator
+from dipy.tracking.streamline import length, transform_streamlines
 import time
+
+from fury import actor, window
 
 
 class RolloutEnvironment(object):
@@ -88,10 +91,11 @@ class RolloutEnvironment(object):
             format_state_func: Callable[[np.ndarray], np.ndarray],
             format_action_func: Callable[[np.ndarray], np.ndarray],
             oracle_reward: Reward,  # TODO: It's not technically a reward. It's just a score to evaluate the best streamline.
-            prob: float = 0.1,
-            dynamic_prob: bool = False
+            prob: float = 1.1,
+            dynamic_prob: bool = False,
+            render: bool = True
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        _prob = prob  # Copy for dynamic probability adjustment during rollout
+        _prob = 2.0  # Copy for dynamic probability adjustment during rollout
 
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
         # creating the agent before the environment.
@@ -101,6 +105,7 @@ class RolloutEnvironment(object):
 
         # Backtrack the streamlines
         backup_length = current_length - self.backup_size
+        initial_backtracked_length = backup_length
 
         if backup_length == current_length:  # We don't backtrack in that case, there's no need to compute the rest
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
@@ -123,6 +128,7 @@ class RolloutEnvironment(object):
 
         # Every streamline is continuing, thus no stopping flag for each of them
         flags = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=int)
+        true_lengths = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=int)
 
         while backup_length < max_rollout_length and not all(np.size(arr) == 0 for arr in rollouts_continue_idx):
 
@@ -155,13 +161,19 @@ class RolloutEnvironment(object):
                 new_continue_idx, stopping_idx = (rollouts_continue_idx[rollout][~should_stop],
                                                   rollouts_continue_idx[rollout][should_stop])
 
+                relative_stopping_indices = np.where(np.isin(backtrackable_idx, stopping_idx))[0]
+                true_lengths[rollout, relative_stopping_indices] = backup_length
+
                 rollouts_continue_idx[rollout] = new_continue_idx
 
                 # Keep the reason why tracking stopped (don't delete a streamline that reached the target!)
-                relative_stopping_indices = np.where(np.isin(backtrackable_idx, stopping_idx))[0]
+
                 flags[rollout, relative_stopping_indices] = new_flags[should_stop]
 
             backup_length += 1
+
+        if current_length > 100:
+            self._render_screenshot(initial_backtracked_length, backup_length, streamlines, rollouts, flags, backtrackable_idx, oracle_reward, true_lengths)
 
         # Get the best rollout for each streamline.
         best_rollouts, new_flags = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, oracle_reward)
@@ -183,6 +195,29 @@ class RolloutEnvironment(object):
         in_stopping_idx = in_stopping_idx[mask]
 
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
+
+    def _trim_zeros(self, streamlines: np.ndarray, true_lengths: np.ndarray) -> list[np.ndarray]:
+        return [streamline[:l] for streamline, l in zip(streamlines, true_lengths)]
+
+    def _render_screenshot(self, backtracked_length: int, rollout_length: int, streamlines: np.ndarray, rollouts: np.ndarray, flags: np.ndarray, backtrackable_idx: np.ndarray, oracle_reward, true_lengths):
+        backtracking_streamlines = streamlines[backtrackable_idx, :backtracked_length, :]
+        backtracking_rollouts = rollouts[:, backtrackable_idx, :rollout_length, :]
+        chosen_streamline = self._trim_zeros(backtracking_rollouts[:, 0, ...], true_lengths[:, 0])
+
+
+        reference_streamline = backtracking_streamlines[None, 0, ...]
+        reference_actor = actor.line(reference_streamline, (1.0, 0, 0))
+        rollouts_actor = actor.line(chosen_streamline, (1.0, 0.5, 0))
+
+        scene = window.Scene()
+        scene.add(rollouts_actor)
+        scene.add(reference_actor)
+        window.show(scene, size=(600, 600), reset_camera=False)
+
+        # Select a rollout at random
+
+
+        pass
 
     def _filter_best_rollouts(self,
                               rollouts: np.ndarray,
