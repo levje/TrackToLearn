@@ -107,17 +107,6 @@ class BaseEnv(object):
             exclude_mask
         )
 
-        # Rollouts!
-        self.do_rollout = env_dto['do_rollout']
-        self.roll_n_steps = env_dto['roll_n_steps']
-        self.rollout_env = RolloutEnvironment(
-            None,
-            env_dto['n_rollouts'],
-            env_dto['backup_size'],
-            env_dto['extra_n_steps'],
-            self.max_nb_steps
-        )
-
 
     def _init_generic_env(
         self,
@@ -366,6 +355,21 @@ class BaseEnv(object):
                  self.tractometer_weighting,
                  self.coverage_weighting])
 
+            # TODO: Delete that
+            self.rollout_reward_function = RewardFunction(
+                [peaks_reward,
+                 target_reward,
+                 length_reward,
+                 self.oracle_reward,
+                 tractometer_reward,
+                 cover_reward],
+                [0,
+                 0,
+                 self.length_weighting,
+                 self.oracle_weighting,
+                 0,
+                 0])
+
         # ==========================================
         # Filters
         # =========================================
@@ -392,6 +396,21 @@ class BaseEnv(object):
                                                   self.affine_vox2rasmm,
                                                   self.step_size,
                                                   self.min_nb_steps)
+
+        # Rollouts!
+        self.do_rollout = env_dto['do_rollout']
+        self.roll_n_steps = env_dto['roll_n_steps']
+
+        self.rollout_env = RolloutEnvironment(
+            self.reference,
+            None,
+            env_dto['n_rollouts'],
+            env_dto['backup_size'],
+            env_dto['extra_n_steps'],
+            self.max_nb_steps,
+            self.oracle_reward,
+            self.reward_function
+        )
 
     @classmethod
     def from_dataset(

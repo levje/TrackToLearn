@@ -200,16 +200,14 @@ class TrackingEnvironment(BaseEnv):
                                     self.stopping_criteria,
                                     self._format_state,
                                     self._format_actions,
-                                    self.oracle_reward,
-                                    prob=0.1,
-                                    reference_data=self.reference)
+                                    prob=0.1)
 
             rollout_end_time = time.time()
             print(f"Rollout time: {rollout_end_time - rollout_start_time}")
 
             self.streamlines = new_streamlines
             self.new_continue_idx = np.concatenate((self.new_continue_idx, new_continuing_streamlines))
-            self.stopping_idx = stopping_idx  # TODO: Make sure this is correct
+            self.stopping_idx = stopping_idx  # TODO: Make sure this is correct005926609039306641
             new_flags[stopping] = stopping_flags  # TODO: Make sure this is correct
 
         # Keep the reason why tracking stopped

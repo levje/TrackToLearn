@@ -10,7 +10,7 @@ from TrackToLearn.datasets.utils import (MRIDataVolume, SubjectData,
 from TrackToLearn.environments.stopping_criteria import (
     is_flag_set, StoppingFlags)
 
-from TrackToLearn.environments.reward import Reward
+from TrackToLearn.environments.reward import Reward, RewardFunction
 from TrackToLearn.experiment.oracle_validator import OracleValidator
 from dipy.tracking.streamline import length, transform_streamlines
 import time
@@ -20,13 +20,15 @@ from fury import actor, window
 
 class RolloutEnvironment(object):
 
-    # Specific constructor to avoid creating another RolloutEnvironment from the BaseEnv's constructor.
     def __init__(self,
+                 reference: str,
                  agent: ActorCritic = None,
                  n_rollouts: int = 5,  # Nb of rollouts to try
                  backup_size: int = 1,  # Nb of steps we are backtracking
                  extra_n_steps: int = 6,  # Nb of steps further we need to compare the different rollouts
-                 max_streamline_steps: int = 256  # Max length of a streamline
+                 max_streamline_steps: int = 256,  # Max length of a streamline
+                 oracle_reward: Reward = None,
+                 reward_function: RewardFunction = None
                  ):
 
         self.rollout_agent = agent
@@ -34,6 +36,13 @@ class RolloutEnvironment(object):
         self.backup_size = backup_size
         self.extra_n_steps = extra_n_steps
         self.max_streamline_steps = max_streamline_steps
+        self.reference = nib.load(reference)
+        self.reference_affine = self.reference.affine
+        self.reference_data = self.reference.get_fdata()
+        self.oracle_reward = oracle_reward
+        self.reward_function = reward_function
+
+    # Specific constructor to avoid creating another RolloutEnvironment from the BaseEnv's constructor.
 
     # Overrides the set_rollout_agent from the BaseEnv
     def set_rollout_agent(self, rollout_agent: ActorCritic):
@@ -90,13 +99,11 @@ class RolloutEnvironment(object):
             stopping_criteria: dict[StoppingFlags, Callable],
             format_state_func: Callable[[np.ndarray], np.ndarray],
             format_action_func: Callable[[np.ndarray], np.ndarray],
-            oracle_reward: Reward,  # TODO: It's not technically a reward. It's just a score to evaluate the best streamline.
             prob: float = 1.1,
             dynamic_prob: bool = False,
-            render: bool = True,
-            reference_data: str = ""
+            render: bool = True
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        _prob = 2.0  # Copy for dynamic probability adjustment during rollout
+        _prob = 1.1  # Copy for dynamic probability adjustment during rollout
 
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
         # creating the agent before the environment.
@@ -118,9 +125,9 @@ class RolloutEnvironment(object):
             # Can't backtrack, because we're at the start or every streamline ends correctly (in the target).
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
-
-        streamlines[backtrackable_idx, backup_length:current_length, :] = 0  # Backtrack on backup_length
-        rollouts = np.repeat(streamlines[None, ...], self.n_rollouts,
+        backtracked_streamlines = streamlines.copy()
+        backtracked_streamlines[backtrackable_idx, backup_length:current_length, :] = 0  # Backtrack on backup_length
+        rollouts = np.repeat(backtracked_streamlines[None, ...], self.n_rollouts,
                              axis=0)  # Contains the different rollouts
 
         max_rollout_length = min(current_length + self.extra_n_steps, self.max_streamline_steps)
@@ -173,19 +180,23 @@ class RolloutEnvironment(object):
 
             backup_length += 1
 
+        true_lengths[true_lengths == 0] = backup_length + 1
 
         # Get the best rollout for each streamline.
-        best_rollouts, new_flags, rollouts_scores = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, oracle_reward)
+        # TODO: Since sometimes the best rollout is shorter than the current length, we will squash by keeping the smallest, thus introducing some zeros along the way.
+        best_rollouts, new_flags, best_true_lengths, rollouts_scores = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, true_lengths)
+        streamline_improvement_idx = self._filter_worse_rollouts(current_length, best_rollouts, best_true_lengths, flags)
 
-        if current_length > 10:
-            self._render_screenshot(initial_backtracked_length, backup_length, streamlines, rollouts, flags, backtrackable_idx, oracle_reward, true_lengths, rollouts_scores, reference_data)
+        #if current_length > 5 and current_length < 150:
+        #    self._render_screenshot(initial_backtracked_length, backup_length, current_length, streamlines, rollouts, flags, backtrackable_idx, true_lengths, rollouts_scores)
 
 
         # Squash the retained rollouts to the current_length
         best_rollouts[:, current_length:, :] = 0
 
         # Replace the original streamlines with the best rollouts.
-        streamlines[backtrackable_idx, :, :] = best_rollouts
+        streamlines[backtrackable_idx[streamline_improvement_idx], :, :] = best_rollouts
+        # TODO: USE THE streamline_improvement_idx to only change the flags of the streamlines that improved
         in_stopping_flags[backtrackable_mask] = new_flags  # Remove? Should we overwrite the rollouts/streamlines that are still failing?
 
         mask = in_stopping_flags > 0
@@ -202,7 +213,9 @@ class RolloutEnvironment(object):
     def _trim_zeros(self, streamlines: np.ndarray, true_lengths: np.ndarray) -> list[np.ndarray]:
         return [streamline[:l] for streamline, l in zip(streamlines, true_lengths)]
 
-    def _render_screenshot(self, backtracked_length: int, rollout_length: int, streamlines: np.ndarray, rollouts: np.ndarray, flags: np.ndarray, backtrackable_idx: np.ndarray, oracle_reward, true_lengths, rollout_scores: np.ndarray, reference_mask: str):
+    def _render_screenshot(self, backtracked_length: int, rollout_length: int, current_length, streamlines: np.ndarray, rollouts: np.ndarray, flags: np.ndarray, backtrackable_idx: np.ndarray, true_lengths, rollout_scores: np.ndarray):
+        original_streamline = streamlines[backtrackable_idx, :current_length, :]
+
         backtracking_streamlines = streamlines[backtrackable_idx, :backtracked_length, :]
         backtracking_rollouts = rollouts[:, backtrackable_idx, :rollout_length, :]
         chosen_streamline = self._trim_zeros(backtracking_rollouts[:, 0, ...], true_lengths[:, 0])
@@ -211,34 +224,37 @@ class RolloutEnvironment(object):
         best_streamline = [chosen_streamline[max_score_idx]]
         chosen_streamline.pop(max_score_idx)
 
-        wm_data = nib.load(reference_mask).get_fdata()
-        fa_actor = actor.slicer(wm_data)
+        fa_actor = actor.slicer(self.reference_data, opacity=0.7, interpolation='nearest')
 
+        original_reference_streamline = original_streamline[None, 0, ...]
         reference_streamline = backtracking_streamlines[None, 0, ...]
-        reference_actor = actor.line(reference_streamline, (65/255, 143/255, 205/255), linewidth=3, fake_tube=True)
-        rollouts_actor = actor.line(chosen_streamline, (0, 167/255, 157/255), linewidth=2, fake_tube=True)
-        best_rollout_actor = actor.line(best_streamline, (85/255, 185/255, 72/255), linewidth=3, fake_tube=True)
+        original_actor = actor.line(original_reference_streamline, (65/255, 143/255, 205/255), linewidth=3)
+        reference_actor = actor.line(reference_streamline, (65/255, 143/255, 205/255), linewidth=3)
+        rollouts_actor = actor.line(chosen_streamline, (1, 0, 0), linewidth=3)
+        best_rollout_actor = actor.line(best_streamline, (0, 1, 0), linewidth=3)
 
         scene = window.Scene()
         scene.add(fa_actor)
         scene.add(rollouts_actor)
         scene.add(best_rollout_actor)
         scene.add(reference_actor)
+        scene.add(original_actor)
 
-
+        record = True
         window.show(scene, size=(600, 600), reset_camera=False)
-
+        # if record:
+            # window.record(scene, out_path='/home/local/USHERBROOKE/levj1404/Desktop/renders/render_rollout_{}_{}.png'.format(backtracked_length, rollout_length), size=(600, 600))
     def _filter_best_rollouts(self,
                               rollouts: np.ndarray,
                               flags,
                               backtrackable_idx: np.ndarray,
-                              oracle_reward: Reward  # TODO: It's not technically a reward. It's just a score to evaluate the best streamline.
+                              true_lengths: np.ndarray
                               ):
 
         dones = flags > 0
         rollouts_scores = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=np.float32)
         for rollout in range(rollouts.shape[0]):
-            rewards = oracle_reward(rollouts[rollout, backtrackable_idx, ...], dones=dones[rollout, :])[0]
+            rewards = self.reward_function(rollouts[rollout, backtrackable_idx, ...], dones=dones[rollout, :])[0]
             rollouts_scores[rollout] = rewards
 
         # Filter based on the calculated scores and keep the best rollouts and their according flags
@@ -246,8 +262,20 @@ class RolloutEnvironment(object):
         streamline_indices = np.arange(backtrackable_idx.shape[0])
         best_rollouts = rollouts[best_rollout_indices, streamline_indices, ...]
         best_flags = flags[best_rollout_indices, streamline_indices]
+        best_true_lengths = true_lengths[best_rollout_indices, streamline_indices]
 
-        return best_rollouts, best_flags, rollouts_scores  # Remove the return of the scores
+        return best_rollouts, best_flags, best_true_lengths, rollouts_scores  # Remove the return of the scores
+
+    def _filter_worse_rollouts(self, current_length: int, best_rollouts: np.ndarray, true_lengths: np.ndarray, flags: np.ndarray):
+        # TODO: If the best streamline is smaller, we shouldn't keep it
+        # TODO: Unless it has a stopping flag of STOPPING_TARGET
+        # best_rollouts is of shape (n_backtrackable, max_length, 3)
+
+        rollouts_long_enough_idx = np.where(true_lengths >= current_length)
+        # best_rollouts = best_rollouts[rollouts_long_enough_idx]
+        # true_lengths = true_lengths[rollouts_long_enough_idx]
+        # flags = flags[rollouts_long_enough_idx]
+        return rollouts_long_enough_idx
 
     @staticmethod
     def _get_backtrackable_indices(

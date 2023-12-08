@@ -18,9 +18,9 @@ npv = 33
 min_length = 20
 max_length = 200
 
-list_n_rollouts = [2, 5]
-list_backup_size = [1, 3, 5]
-list_extra_n_steps = [5, 10]
+list_n_rollouts = [5]
+list_backup_size = [5]
+list_extra_n_steps = [5]
 list_roll_n_steps = [1]
 
 EXPERIMENT = "SAC_Auto_FiberCupTrainOracle"
