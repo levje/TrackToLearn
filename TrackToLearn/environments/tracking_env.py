@@ -201,7 +201,8 @@ class TrackingEnvironment(BaseEnv):
                                     self._format_state,
                                     self._format_actions,
                                     self.oracle_reward,
-                                    prob=0.1)
+                                    prob=0.1,
+                                    reference_data=self.reference)
 
             rollout_end_time = time.time()
             print(f"Rollout time: {rollout_end_time - rollout_start_time}")
