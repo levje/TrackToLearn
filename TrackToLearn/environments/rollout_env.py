@@ -119,6 +119,10 @@ class RolloutEnvironment(object):
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
         backtrackable_mask = self._get_backtrackable_indices(in_stopping_flags)
+
+        # TODO: REMOVEEEEEEEEEEEEE
+        backtrackable_mask[0] = False
+
         backtrackable_idx = in_stopping_idx[backtrackable_mask]
 
         if backtrackable_idx.size <= 0 or backup_length <= 1:
@@ -187,26 +191,27 @@ class RolloutEnvironment(object):
         best_rollouts, new_flags, best_true_lengths, rollouts_scores = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, true_lengths)
         streamline_improvement_idx = self._filter_worse_rollouts(current_length, best_rollouts, best_true_lengths, flags)
 
-        #if current_length > 5 and current_length < 150:
-        #    self._render_screenshot(initial_backtracked_length, backup_length, current_length, streamlines, rollouts, flags, backtrackable_idx, true_lengths, rollouts_scores)
-
+        # if current_length > 5 and current_length < 150:
+           # self._render_screenshot(initial_backtracked_length, backup_length, current_length, streamlines, rollouts, flags, backtrackable_idx, true_lengths, rollouts_scores)
 
         # Squash the retained rollouts to the current_length
         best_rollouts[:, current_length:, :] = 0
 
         # Replace the original streamlines with the best rollouts.
-        streamlines[backtrackable_idx[streamline_improvement_idx], :, :] = best_rollouts
+        streamlines[backtrackable_idx[streamline_improvement_idx], :, :] = best_rollouts[streamline_improvement_idx]
         # TODO: USE THE streamline_improvement_idx to only change the flags of the streamlines that improved
-        in_stopping_flags[backtrackable_mask] = new_flags  # Remove? Should we overwrite the rollouts/streamlines that are still failing?
+        backtrackable_relative_to_in_stopping_idx = np.where(backtrackable_mask)[0]
+        in_stopping_flags[backtrackable_relative_to_in_stopping_idx[streamline_improvement_idx]] = new_flags[streamline_improvement_idx]  # Remove? Should we overwrite the rollouts/streamlines that are still failing?
 
-        mask = in_stopping_flags > 0
+        mask_improvement = np.full(in_stopping_idx.shape, False)
+        mask_improvement[backtrackable_relative_to_in_stopping_idx[streamline_improvement_idx]] = True
 
         # Get new continuing streamlines' indexes in the full streamlines array
-        continuing_rollouts = np.where(new_flags == 0)[0]
+        continuing_rollouts = np.where(np.logical_and(new_flags == 0, mask_improvement[backtrackable_relative_to_in_stopping_idx]))[0]
         new_continuing_streamlines = in_stopping_idx[continuing_rollouts]
 
         # Remove stopping flags for the successful rollouts
-        in_stopping_idx = in_stopping_idx[mask]
+        in_stopping_idx = in_stopping_idx[mask_improvement]
 
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
 
@@ -271,7 +276,7 @@ class RolloutEnvironment(object):
         # TODO: Unless it has a stopping flag of STOPPING_TARGET
         # best_rollouts is of shape (n_backtrackable, max_length, 3)
 
-        rollouts_long_enough_idx = np.where(true_lengths >= current_length)
+        rollouts_long_enough_idx = np.where(true_lengths >= current_length)[0]
         # best_rollouts = best_rollouts[rollouts_long_enough_idx]
         # true_lengths = true_lengths[rollouts_long_enough_idx]
         # flags = flags[rollouts_long_enough_idx]
