@@ -192,6 +192,10 @@ class TrackingEnvironment(BaseEnv):
             and (self.stopping_idx.size > 0) \
             and (self.length % self.roll_n_steps == 0):
             rollout_start_time = time.time()
+
+            selected_flags = new_flags[stopping]
+            total_beginning = self.stopping_idx.size + new_flags[stopping].size
+
             new_streamlines, new_continuing_streamlines, stopping_idx, stopping_flags = self.rollout_env.rollout(
                                     self.streamlines,
                                     self.stopping_idx,
@@ -201,6 +205,10 @@ class TrackingEnvironment(BaseEnv):
                                     self._format_state,
                                     self._format_actions,
                                     prob=0.1)
+
+            other_selected_flags = stopping_flags[stopping_flags > 0]
+            total_end = stopping_idx.size + stopping_flags[stopping_flags > 0].size + 2*new_continuing_streamlines.size
+            assert total_beginning == total_end
 
             rollout_end_time = time.time()
             print(f"Rollout time: {rollout_end_time - rollout_start_time}")

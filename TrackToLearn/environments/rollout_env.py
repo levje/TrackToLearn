@@ -174,7 +174,7 @@ class RolloutEnvironment(object):
                                                   rollouts_continue_idx[rollout][should_stop])
 
                 relative_stopping_indices = np.where(np.isin(backtrackable_idx, stopping_idx))[0]
-                true_lengths[rollout, relative_stopping_indices] = backup_length
+                true_lengths[rollout, relative_stopping_indices] = backup_length + 1
 
                 rollouts_continue_idx[rollout] = new_continue_idx
 
@@ -184,7 +184,7 @@ class RolloutEnvironment(object):
 
             backup_length += 1
 
-        true_lengths[true_lengths == 0] = backup_length + 1
+        true_lengths[true_lengths == 0] = backup_length
 
         # Get the best rollout for each streamline.
         # TODO: Since sometimes the best rollout is shorter than the current length, we will squash by keeping the smallest, thus introducing some zeros along the way.
@@ -215,7 +215,41 @@ class RolloutEnvironment(object):
 
         assert in_stopping_idx.shape[0] == np.sum(in_stopping_flags > 0)
 
+        self._check_if_streamline_has_coordinate_zero(streamlines)
+        self._check_if_continuing_streamline_is_zero(streamlines, current_length, new_continuing_streamlines)
+
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
+
+    def _check_if_continuing_streamline_is_zero(self, streamlines, current_length, continuing_streamlines):
+
+        current_pos_is_null = np.all(streamlines[continuing_streamlines, current_length] == [0.0, 0.0, 0.0], axis=1)
+        num_current_pos_is_null = current_pos_is_null.sum()
+        assert num_current_pos_is_null == continuing_streamlines.shape[0]
+
+        previous_pos_is_null = np.all(streamlines[continuing_streamlines, current_length-1] == [0.0, 0.0, 0.0], axis=1)
+        num_prev_pos_is_null = previous_pos_is_null.sum()
+        assert num_prev_pos_is_null == 0
+
+    def _check_if_streamline_has_coordinate_zero(self, streamlines):
+        zero_mask = np.all(streamlines == [0.0, 0.0, 0.0], axis=2)
+
+        # Shift the zero_mask to the right by one, padding with False
+        shifted_zero_mask = np.hstack([np.full((zero_mask.shape[0], 1), False), zero_mask[:, 1:]])
+
+        # Create a mask for non-zero coordinates
+        non_zero_mask = ~np.all(streamlines == [0.0, 0.0, 0.0], axis=2)
+
+        # Find where a zero is followed by a non-zero
+        zero_followed_by_non_zero = shifted_zero_mask & non_zero_mask
+
+        # Identify streamlines that contain at least one such pattern
+        selected_streamlines = np.any(zero_followed_by_non_zero, axis=1)
+
+        # Indices of selected streamlines
+        selected_indices = np.where(selected_streamlines)[0]
+
+        assert selected_indices.shape[0] == 0, "Streamlines with zero coordinates found at indices: {}".format(selected_indices)
+
 
     def _trim_zeros(self, streamlines: np.ndarray, true_lengths: np.ndarray) -> list[np.ndarray]:
         return [streamline[:l] for streamline, l in zip(streamlines, true_lengths)]
@@ -267,7 +301,7 @@ class RolloutEnvironment(object):
         # Filter based on the calculated scores and keep the best rollouts and their according flags
         best_rollout_indices = np.argmax(rollouts_scores, axis=0)
         streamline_indices = np.arange(backtrackable_idx.shape[0])
-        best_rollouts = rollouts[best_rollout_indices, streamline_indices, ...]
+        best_rollouts = rollouts[best_rollout_indices, backtrackable_idx, ...]
         best_flags = flags[best_rollout_indices, streamline_indices]
         best_true_lengths = true_lengths[best_rollout_indices, streamline_indices]
 
