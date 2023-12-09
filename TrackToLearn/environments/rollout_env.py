@@ -121,7 +121,7 @@ class RolloutEnvironment(object):
         backtrackable_mask = self._get_backtrackable_indices(in_stopping_flags)
 
         # TODO: REMOVEEEEEEEEEEEEE
-        backtrackable_mask[0] = False
+        # backtrackable_mask[0] = False
 
         backtrackable_idx = in_stopping_idx[backtrackable_mask]
 
@@ -211,7 +211,9 @@ class RolloutEnvironment(object):
         new_continuing_streamlines = in_stopping_idx[continuing_rollouts]
 
         # Remove stopping flags for the successful rollouts
-        in_stopping_idx = in_stopping_idx[mask_improvement]
+        in_stopping_idx = in_stopping_idx[np.where(in_stopping_flags > 0)[0]]
+
+        assert in_stopping_idx.shape[0] == np.sum(in_stopping_flags > 0)
 
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
 
