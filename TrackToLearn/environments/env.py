@@ -355,21 +355,6 @@ class BaseEnv(object):
                  self.tractometer_weighting,
                  self.coverage_weighting])
 
-            # TODO: Delete that
-            self.rollout_reward_function = RewardFunction(
-                [peaks_reward,
-                 target_reward,
-                 length_reward,
-                 self.oracle_reward,
-                 tractometer_reward,
-                 cover_reward],
-                [0,
-                 0,
-                 self.length_weighting,
-                 self.oracle_weighting,
-                 0,
-                 0])
-
         # ==========================================
         # Filters
         # =========================================

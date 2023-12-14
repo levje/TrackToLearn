@@ -103,7 +103,7 @@ class RolloutEnvironment(object):
             dynamic_prob: bool = False,
             render: bool = True
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        _prob = 1.1  # Copy for dynamic probability adjustment during rollout
+        _prob = prob  # Copy for dynamic probability adjustment during rollout
 
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
         # creating the agent before the environment.
@@ -111,7 +111,7 @@ class RolloutEnvironment(object):
             print("Rollout: no agent specified. Rollout aborted.")
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
-        # Backtrack the streamlines
+        # Backtrack streamline length
         backup_length = current_length - self.backup_size
         initial_backtracked_length = backup_length
 
@@ -119,24 +119,19 @@ class RolloutEnvironment(object):
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
         backtrackable_mask = self._get_backtrackable_indices(in_stopping_flags)
-
-        # TODO: REMOVEEEEEEEEEEEEE
-        # backtrackable_mask[0] = False
-
         backtrackable_idx = in_stopping_idx[backtrackable_mask]
 
         if backtrackable_idx.size <= 0 or backup_length <= 1:
             # Can't backtrack, because we're at the start or every streamline ends correctly (in the target).
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
-        backtracked_streamlines = streamlines.copy()
+        backtracked_streamlines = streamlines.copy()  # TODO: Avoid copying the entire streamlines each time
         backtracked_streamlines[backtrackable_idx, backup_length:current_length, :] = 0  # Backtrack on backup_length
         rollouts = np.repeat(backtracked_streamlines[None, ...], self.n_rollouts,
-                             axis=0)  # Contains the different rollouts
+                             axis=0)  # Copy the backtracked streamlines in a new dim for each rollout.
 
         max_rollout_length = min(current_length + self.extra_n_steps, self.max_streamline_steps)
-
-        rollouts_continue_idx = [backtrackable_idx for _ in range(self.n_rollouts)]  # np.repeat(backtrackable_idx[None, ...], self.n_rollouts, axis=0)
+        rollouts_continue_idx = [backtrackable_idx for _ in range(self.n_rollouts)]
 
         # Every streamline is continuing, thus no stopping flag for each of them
         flags = np.zeros((self.n_rollouts, backtrackable_idx.shape[0]), dtype=int)
@@ -179,7 +174,6 @@ class RolloutEnvironment(object):
                 rollouts_continue_idx[rollout] = new_continue_idx
 
                 # Keep the reason why tracking stopped (don't delete a streamline that reached the target!)
-
                 flags[rollout, relative_stopping_indices] = new_flags[should_stop]
 
             backup_length += 1
@@ -187,19 +181,18 @@ class RolloutEnvironment(object):
         true_lengths[true_lengths == 0] = backup_length
 
         # Get the best rollout for each streamline.
-        # TODO: Since sometimes the best rollout is shorter than the current length, we will squash by keeping the smallest, thus introducing some zeros along the way.
         best_rollouts, new_flags, best_true_lengths, rollouts_scores = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, true_lengths)
         streamline_improvement_idx = self._filter_worse_rollouts(current_length, best_rollouts, best_true_lengths, flags)
 
-        # if current_length > 5 and current_length < 150:
-           # self._render_screenshot(initial_backtracked_length, backup_length, current_length, streamlines, rollouts, flags, backtrackable_idx, true_lengths, rollouts_scores)
+        if render:
+            self._render_screenshot(initial_backtracked_length, backup_length, current_length, streamlines, rollouts,
+                                    flags, backtrackable_idx, true_lengths, rollouts_scores)
 
         # Squash the retained rollouts to the current_length
         best_rollouts[:, current_length:, :] = 0
 
         # Replace the original streamlines with the best rollouts.
         streamlines[backtrackable_idx[streamline_improvement_idx], :, :] = best_rollouts[streamline_improvement_idx]
-        # TODO: USE THE streamline_improvement_idx to only change the flags of the streamlines that improved
         backtrackable_relative_to_in_stopping_idx = np.where(backtrackable_mask)[0]
         in_stopping_flags[backtrackable_relative_to_in_stopping_idx[streamline_improvement_idx]] = new_flags[streamline_improvement_idx]  # Remove? Should we overwrite the rollouts/streamlines that are still failing?
 
@@ -220,7 +213,9 @@ class RolloutEnvironment(object):
 
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
 
-    def _check_if_continuing_streamline_is_zero(self, streamlines, current_length, continuing_streamlines):
+    # TODO: Remove once the zero coordinates are fixed.
+    @staticmethod
+    def _check_if_continuing_streamline_is_zero(streamlines, current_length, continuing_streamlines):
 
         current_pos_is_null = np.all(streamlines[continuing_streamlines, current_length] == [0.0, 0.0, 0.0], axis=1)
         num_current_pos_is_null = current_pos_is_null.sum()
@@ -230,7 +225,9 @@ class RolloutEnvironment(object):
         num_prev_pos_is_null = previous_pos_is_null.sum()
         assert num_prev_pos_is_null == 0
 
-    def _check_if_streamline_has_coordinate_zero(self, streamlines):
+    # TODO: Remove once the zero coordinates are fixed.
+    @staticmethod
+    def _check_if_streamline_has_coordinate_zero(streamlines):
         zero_mask = np.all(streamlines == [0.0, 0.0, 0.0], axis=2)
 
         # Shift the zero_mask to the right by one, padding with False
@@ -250,11 +247,11 @@ class RolloutEnvironment(object):
 
         assert selected_indices.shape[0] == 0, "Streamlines with zero coordinates found at indices: {}".format(selected_indices)
 
-
-    def _trim_zeros(self, streamlines: np.ndarray, true_lengths: np.ndarray) -> list[np.ndarray]:
+    @staticmethod
+    def _trim_zeros(streamlines: np.ndarray, true_lengths: np.ndarray) -> list[np.ndarray]:
         return [streamline[:l] for streamline, l in zip(streamlines, true_lengths)]
 
-    def _render_screenshot(self, backtracked_length: int, rollout_length: int, current_length, streamlines: np.ndarray, rollouts: np.ndarray, flags: np.ndarray, backtrackable_idx: np.ndarray, true_lengths, rollout_scores: np.ndarray):
+    def _render_snapshot(self, backtracked_length: int, rollout_length: int, current_length, streamlines: np.ndarray, rollouts: np.ndarray, flags: np.ndarray, backtrackable_idx: np.ndarray, true_lengths, rollout_scores: np.ndarray):
         original_streamline = streamlines[backtrackable_idx, :current_length, :]
 
         backtracking_streamlines = streamlines[backtrackable_idx, :backtracked_length, :]
@@ -285,6 +282,7 @@ class RolloutEnvironment(object):
         window.show(scene, size=(600, 600), reset_camera=False)
         # if record:
             # window.record(scene, out_path='/home/local/USHERBROOKE/levj1404/Desktop/renders/render_rollout_{}_{}.png'.format(backtracked_length, rollout_length), size=(600, 600))
+
     def _filter_best_rollouts(self,
                               rollouts: np.ndarray,
                               flags,
@@ -307,15 +305,12 @@ class RolloutEnvironment(object):
 
         return best_rollouts, best_flags, best_true_lengths, rollouts_scores  # Remove the return of the scores
 
-    def _filter_worse_rollouts(self, current_length: int, best_rollouts: np.ndarray, true_lengths: np.ndarray, flags: np.ndarray):
-        # TODO: If the best streamline is smaller, we shouldn't keep it
+    @staticmethod
+    def _filter_worse_rollouts(current_length: int, rollout_lengths: np.ndarray, flags: np.ndarray):
+        # If the best streamline is smaller, we shouldn't keep it
         # TODO: Unless it has a stopping flag of STOPPING_TARGET
-        # best_rollouts is of shape (n_backtrackable, max_length, 3)
 
-        rollouts_long_enough_idx = np.where(true_lengths >= current_length)[0]
-        # best_rollouts = best_rollouts[rollouts_long_enough_idx]
-        # true_lengths = true_lengths[rollouts_long_enough_idx]
-        # flags = flags[rollouts_long_enough_idx]
+        rollouts_long_enough_idx = np.where(rollout_lengths >= current_length)[0]
         return rollouts_long_enough_idx
 
     @staticmethod
