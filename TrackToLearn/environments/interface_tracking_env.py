@@ -39,7 +39,7 @@ class InterfaceTrackingEnvironment(TrackingEnvironment):
         # step, flip it
         if self.length == 1:
             # Grow streamlines one step forward
-            streamlines = self.streamlines[self.continue_idx].copy()
+            streamlines = np.array(self.streamlines[self.continue_idx])
             streamlines[:, self.length, :] = \
                 self.streamlines[self.continue_idx,
                                  self.length-1, :] + directions
@@ -50,7 +50,7 @@ class InterfaceTrackingEnvironment(TrackingEnvironment):
                     streamlines[:, :self.length + 1])
 
             # Flip stopping trajectories
-            directions[stopping] *= -1
+            actions[stopping] *= -1
 
         return super().step(actions)
 
@@ -89,7 +89,7 @@ class InterfaceNoisyTrackingEnvironment(NoisyTrackingEnvironment):
         if self.length == 1:
 
             # Grow streamlines one step forward
-            streamlines = self.streamlines[self.continue_idx].copy()
+            streamlines = np.array(self.streamlines[self.continue_idx])
             streamlines[:, self.length, :] = \
                 self.streamlines[self.continue_idx,
                                  self.length-1, :] + directions
@@ -100,6 +100,6 @@ class InterfaceNoisyTrackingEnvironment(NoisyTrackingEnvironment):
                     streamlines[:, :self.length + 1])
 
             # Flip stopping trajectories
-            directions[stopping] *= -1
+            actions[stopping] *= -1
 
         return super().step(actions)

@@ -11,6 +11,7 @@ from argparse import RawTextHelpFormatter
 from os.path import join
 
 from dipy.io.utils import get_reference_info, create_tractogram_header
+from nibabel.streamlines import detect_format
 from scilpy.io.utils import (add_overwrite_arg,
                              add_sh_basis_args,
                              assert_inputs_exist, assert_outputs_exist,
@@ -27,6 +28,10 @@ from TrackToLearn.algorithms.sac import SAC
 from TrackToLearn.algorithms.sac_auto import SACAuto
 from TrackToLearn.algorithms.vpg import VPG
 from TrackToLearn.datasets.utils import MRIDataVolume
+from TrackToLearn.experiment.experiment import (
+    add_oracle_args,
+    add_tractometer_args)
+
 from TrackToLearn.experiment.tracker import Tracker
 from TrackToLearn.experiment.ttl import TrackToLearnExperiment
 
@@ -58,6 +63,7 @@ class TrackToLearnTrack(TrackToLearnExperiment):
 
         self.in_seed = track_dto['in_seed']
         self.in_mask = track_dto['in_mask']
+        self.input_wm = track_dto['input_wm']
 
         self.dataset_file = None
         self.subject_id = None
@@ -66,6 +72,11 @@ class TrackToLearnTrack(TrackToLearnExperiment):
         self.out_tractogram = track_dto['out_tractogram']
 
         self.prob = track_dto['prob']
+        self.noise = track_dto['noise']
+
+        self.binary_stopping_threshold = \
+            track_dto['binary_stopping_threshold']
+        self.cmc = track_dto['cmc']
 
         self.n_actor = track_dto['n_actor']
         self.npv = track_dto['npv']
@@ -107,7 +118,7 @@ class TrackToLearnTrack(TrackToLearnExperiment):
             self.algorithm = hyperparams['algorithm']
             self.step_size = float(hyperparams['step_size'])
             self.add_neighborhood = hyperparams['add_neighborhood']
-            self.voxel_size = float(hyperparams['voxel_size'])
+            self.voxel_size = hyperparams.get('voxel_size', 2.0)
             self.theta = hyperparams['max_angle']
             self.epsilon = hyperparams.get('max_angular_error', 90)
             self.hidden_dims = hyperparams['hidden_dims']
@@ -139,8 +150,14 @@ class TrackToLearnTrack(TrackToLearnExperiment):
         self.target_bonus_factor = 0.0
         self.exclude_penalty_factor = 0.0
         self.angle_penalty_factor = 0.0
-        self.oracle_weighting = 0.0
+        # Oracle parameters
+        self.oracle_checkpoint = track_dto['oracle_checkpoint']
+        self.dense_oracle_weighting = 0.0
+        self.sparse_oracle_weighting = 0.0
+        self.oracle_validator = False
         self.oracle_filter = False
+        self.oracle_stopping_criterion = \
+            track_dto['oracle_stopping_criterion']
         self.coverage_weighting = 0.0
 
         self.random_seed = track_dto['rng_seed']
@@ -155,20 +172,15 @@ class TrackToLearnTrack(TrackToLearnExperiment):
         """
         Main method where the magic happens
         """
-        # Instanciate environment. Actions will be fed to it and new
-        # states will be returned. The environment updates the streamline
-        print('Loading environment.')
-        back_env, env = self.get_tracking_envs()
-
-        # Get example state to define NN input size
-        example_state = env.reset(0, 1)
-        self.input_size = example_state.shape[1]
-        self.action_size = env.get_action_size()
+        # Presume iso vox
+        ref_img = nib.load(self.reference_file)
+        tracking_voxel_size = ref_img.header.get_zooms()[0]
 
         # Set the voxel size so the agent traverses the same "quantity" of
         # voxels per step as during training.
+
         tracking_voxel_size = env.get_voxel_size()
-        step_size_mm = (tracking_voxel_size / self.voxel_size) * \
+        step_size_mm = (float(tracking_voxel_size) / float(self.voxel_size)) * \
             self.step_size
 
         print("Agent was trained on a voxel size of {}mm and a "
@@ -177,9 +189,15 @@ class TrackToLearnTrack(TrackToLearnExperiment):
         print("Subject has a voxel size of {}mm, setting step size to "
               "{}mm.".format(tracking_voxel_size, step_size_mm))
 
-        if back_env:
-            back_env.set_step_size(step_size_mm)
-        env.set_step_size(step_size_mm)
+        self.step_size = step_size_mm
+
+        # Instanciate environment. Actions will be fed to it and new
+        # states will be returned. The environment updates the streamline
+        back_env, env = self.get_tracking_envs()
+        # Get example state to define NN input size
+        example_state = env.reset(0, 1)
+        self.input_size = example_state.shape[1]
+        self.action_size = env.get_action_size()
 
         # Load agent
         algs = {'VPG': VPG,
@@ -210,21 +228,16 @@ class TrackToLearnTrack(TrackToLearnExperiment):
 
         tracker = Tracker(
             alg, env, back_env, self.n_actor, self.interface_seeding,
-            self.no_retrack, compress=self.compress,
-            min_length=self.min_length, max_length=self.max_length,
-            save_seeds=self.save_seeds)
+            self.no_retrack, self.reference_file, prob=self.prob,
+            compress=self.compress, min_length=self.min_length,
+            max_length=self.max_length, save_seeds=self.save_seeds)
 
         # Run tracking
-        tractogram = tracker.track()
+        filetype = detect_format(self.out_tractogram)
+        tractogram = tracker.track(filetype)
 
         reference = get_reference_info(self.reference_file)
 
-        tractogram.affine_to_rasmm = reference[0]
-
-        tractogram.apply_affine(tractogram.affine_to_rasmm)
-
-        filetype = nib.streamlines.detect_format(self.out_tractogram)
-        reference = get_reference_info(self.wm_file)
         header = create_tractogram_header(filetype, *reference)
 
         # Use generator to save the streamlines on-the-fly
@@ -245,6 +258,9 @@ def add_mandatory_options_tracking(p):
                         'Tracking will stop outside this mask.')
     p.add_argument('out_tractogram',
                    help='Tractogram output file (must be .trk or .tck).')
+    p.add_argument('--input_wm', action='store_true',
+                   help='If set, append the WM mask to the input signal. The '
+                        'agent must have been trained accordingly.')
 
 
 def add_out_options(p):
@@ -313,16 +329,37 @@ def add_track_args(parser):
                          metavar='M',
                          help='Maximum length of a streamline in mm. '
                          '[%(default)s]')
-    track_g.add_argument('--prob', type=float, default=0.0, metavar='sigma',
+    track_g.add_argument('--prob', default=1.0, type=float, metavar='%',
+                         help='Factor multiplied to the standard '
+                         'deviation of the direction distribution '
+                         'predicted by the agent at each step. A '
+                         'value of 0.0 makes the agent deterministic, '
+                         'a value of 1.0 makes the agent fully '
+                         'probabilistic.'
+                         '[%(default)s]')
+    track_g.add_argument('--noise', default=0.0, type=float, metavar='sigma',
                          help='Add noise ~ N (0, `prob`) to the agent\'s\n'
                          'output to make tracking more probabilistic.\n'
-                         'Around 0.1 generally gives good results '
-                         '[%(default)s].')
+                         'Should be between 0.0 and 0.1.'
+                         '[%(default)s]')
     track_g.add_argument('--fa_map', type=str, default=None,
-                         help='Scale the added noise (see `--prob`) according'
+                         help='Scale the added noise (see `--noise`) according'
                          '\nto the provided FA map (.nii.gz). Optional.')
+
+    tracking_mask_group = parser.add_mutually_exclusive_group(required=True)
+    tracking_mask_group.add_argument(
+        '--cmc', action='store_true',
+        help='If set, use Continuous Mask Criteria to stop tracking.')
+    tracking_mask_group.add_argument(
+        '--binary_stopping_threshold',
+        type=float, default=0.1,
+        help='Lower limit for interpolation of tracking mask value.\n'
+             'Tracking will stop below this threshold.')
     parser.add_argument('--rng_seed', default=1337, type=int,
                         help='Random number generator seed [%(default)s].')
+
+    add_oracle_args(parser)
+    add_tractometer_args(parser)
 
 
 def verify_agent_option(parser, args):

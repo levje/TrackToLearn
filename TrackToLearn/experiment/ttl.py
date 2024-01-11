@@ -270,6 +270,7 @@ class TrackToLearnExperiment(Experiment):
             'in_seed': self.in_seed,
             'in_mask': self.in_mask,
             'sh_basis': self.sh_basis,
+            'input_wm': self.input_wm,
             'reference': self.in_odf,  # reference is inferred from the fODF
             # file instead of being passed directly.
         })
@@ -342,7 +343,7 @@ class TrackToLearnExperiment(Experiment):
     def save_rasmm_tractogram(
         self,
         tractogram,
-        i: int = None
+        affine: np.ndarray
     ) -> str:
         """
         Saves a non-stateful tractogram from the training/validation
@@ -369,6 +370,9 @@ class TrackToLearnExperiment(Experiment):
         # than the seed.
         indices = [i for (i, s) in enumerate(tractogram.streamlines)
                    if len(s) > 1]
+
+        tractogram.apply_affine(affine)
+
         streamlines = tractogram.streamlines[indices]
         data_per_streamline = tractogram.data_per_streamline[indices]
         data_per_point = tractogram.data_per_point[indices]
@@ -380,6 +384,8 @@ class TrackToLearnExperiment(Experiment):
             origin=Origin.TRACKVIS,
             data_per_streamline=data_per_streamline,
             data_per_point=data_per_point)
+
+        sft.to_rasmm()
 
         save_tractogram(sft, filename, bbox_valid_check=False)
 

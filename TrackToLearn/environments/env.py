@@ -23,7 +23,7 @@ from TrackToLearn.datasets.utils import (MRIDataVolume, SubjectData,
                                          set_sh_order_basis)
 from TrackToLearn.environments.coverage_reward import CoverageReward
 from TrackToLearn.environments.filters import (CMCFilter, Filters,
-                                               MinLengthFilter, OracleFilter)
+                                               OracleFilter)
 from TrackToLearn.environments.local_reward import (LengthReward,
                                                     PeaksAlignmentReward,
                                                     TargetReward)
@@ -364,7 +364,7 @@ class BaseEnv(object):
 
         self.filters = {}
         # Filter out streamlines below the length threshold
-        self.filters[Filters.MIN_LENGTH] = MinLengthFilter(self.min_nb_steps)
+        # self.filters[Filters.MIN_LENGTH] = MinLengthFilter(self.min_nb_steps)
 
         # Filter out streamlines according to the oracle
         if self.oracle_filter:
@@ -464,6 +464,7 @@ class BaseEnv(object):
         in_seed = env_dto['in_seed']
         in_mask = env_dto['in_mask']
         sh_basis = env_dto['sh_basis']
+        input_wm = env_dto['input_wm']
 
         input_volume, peaks_volume, tracking_mask, seeding_mask = \
             BaseEnv._load_files(
@@ -471,7 +472,8 @@ class BaseEnv(object):
                 wm_file,
                 in_seed,
                 in_mask,
-                sh_basis)
+                sh_basis,
+                input_wm)
 
         return cls(
             input_volume,
@@ -563,7 +565,8 @@ class BaseEnv(object):
         wm_file,
         in_seed,
         in_mask,
-        sh_basis
+        sh_basis,
+        input_wm
     ):
         """ Load data volumes and masks from files. This is useful for
         tracking from a trained model.
@@ -583,7 +586,9 @@ class BaseEnv(object):
         in_mask: str
             Path to the tracking mask file.
         sh_basis: str
-            SH basis of the signal file.
+            SH basis of the signal file
+        input_wm: bool
+            If set, append the WM mask to the input fODF
 
         Returns
         -------
@@ -649,9 +654,11 @@ class BaseEnv(object):
         wm_data = wm.get_fdata()
         if len(wm_data.shape) == 3:
             wm_data = wm_data[..., None]
-
-        signal_data = np.concatenate(
-            [data, wm_data], axis=-1)
+        if input_wm:
+            signal_data = np.concatenate(
+                [data, wm_data], axis=-1)
+        else:
+            signal_data = data
         signal_volume = MRIDataVolume(
             signal_data, signal.affine)
 
@@ -720,7 +727,14 @@ class BaseEnv(object):
             step_size_mm,
             self.affine_vox2rasmm)
 
+        # Compute maximum length
+        self.max_nb_steps = int(self.max_length / step_size_mm)
+        self.min_nb_steps = int(self.min_length / step_size_mm)
+
+        # Neighborhood used as part of the state
         if self.add_neighborhood_vox:
+            # TODO: This is a hack. The neighborhood should be computed
+            # from the step size, not from a separate parameter.
             self.add_neighborhood_vox = convert_length_mm2vox(
                 step_size_mm,
                 self.affine_vox2rasmm)
@@ -729,40 +743,9 @@ class BaseEnv(object):
                  get_neighborhood_vectors_axes(1, self.add_neighborhood_vox))
             ).to(self.device)
 
-        # Compute maximum length
-        self.max_nb_steps = int(self.max_length / step_size_mm)
-        self.min_nb_steps = int(self.min_length / step_size_mm)
-
-        if self.compute_reward:
-            peaks_reward = PeaksAlignmentReward(self.peaks, self.asymmetric)
-            target_reward = TargetReward(self.target_mask)
-            length_reward = LengthReward(self.max_nb_steps)
-            oracle_reward = OracleReward(self.oracle_checkpoint,
-                                         self.reference,
-                                         self.affine_vox2rasmm,
-                                         self.device)
-            cover_reward = CoverageReward(self.tracking_mask)
-            self.reward_function = RewardFunction(
-                [peaks_reward, target_reward,
-                 length_reward, oracle_reward,
-                 cover_reward],
-                [self.alignment_weighting,
-                 self.target_bonus_factor,
-                 self.length_weighting,
-                 self.oracle_weighting,
-                 self.coverage_weighting])
-
         self.stopping_criteria[StoppingFlags.STOPPING_LENGTH] = \
             functools.partial(is_too_long,
                               max_nb_steps=self.max_nb_steps)
-
-        self.stopping_criteria[
-            StoppingFlags.STOPPING_ANGULAR_ERROR] = OracleStoppingCriterion(
-            self.oracle_checkpoint,
-            self.min_nb_steps * 2,
-            self.reference,
-            self.affine_vox2rasmm,
-            self.device)
 
         if self.cmc:
             cmc_criterion = CmcStoppingCriterion(
