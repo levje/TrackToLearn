@@ -94,6 +94,7 @@ wcwidth
 websocket-client
 wurlitzer
 zipp
+trx-python==0.1.2
 
 # torch requirements. change according to your version of CUDA
 # Replace `cu111` for `cpu` for CPU usage or `cuXXX` to fit your

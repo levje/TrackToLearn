@@ -22,7 +22,7 @@ Then, install the dependencies and setup the repo with
 pip install -r requirements.txt
 # Install some specific requirements directly from git
 # scilpy 1.3.0 requires a deprecated version of sklearn on pypi
-pip install git+https://github.com/scilus/scilpy@1.5.0#egg=scilpy
+pip install git+https://github.com/scilus/scilpy@1.6.0#egg=scilpy
 pip install git+https://github.com/scil-vital/dwi_ml#egg=dwi_ml
 pip install git+https://github.com/scilus/ismrm_2015_tractography_challenge_scoring.git
 # Load the project into the environment
@@ -109,7 +109,7 @@ The option for recurrent agents is there but recurrent agents are not yet implem
 
 Contributions are welcome ! There are several TODOs sprinkled through the project which may inspire you. A lot of the code's architecure could be improved, better organized, split and reworked to make the code cleaner. Several performance improvements could also easily be added.
 
-See `ARCHITECURE.md` for an overview of the code.
+See [ARCHITECURE.md](ARCHITECTURE.md) for an overview of the code.
 
 ## What matters in Reinforcement Learning for Tractography (2023)
 
