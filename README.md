@@ -21,7 +21,6 @@ Then, install the dependencies and setup the repo with
 # edit requirements.txt as needed to change your torch install
 pip install -r requirements.txt
 # Install some specific requirements directly from git
-# scilpy 1.3.0 requires a deprecated version of sklearn on pypi
 pip install git+https://github.com/scilus/scilpy@1.6.0#egg=scilpy
 pip install git+https://github.com/scil-vital/dwi_ml#egg=dwi_ml
 pip install git+https://github.com/scilus/ismrm_2015_tractography_challenge_scoring.git
