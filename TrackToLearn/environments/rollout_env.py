@@ -21,7 +21,7 @@ from fury import actor, window
 class RolloutEnvironment(object):
 
     def __init__(self,
-                 reference: str,
+                 reference: nib.Nifti1Image,
                  agent: ActorCritic = None,
                  n_rollouts: int = 5,  # Nb of rollouts to try
                  backup_size: int = 1,  # Nb of steps we are backtracking
@@ -36,7 +36,7 @@ class RolloutEnvironment(object):
         self.backup_size = backup_size
         self.extra_n_steps = extra_n_steps
         self.max_streamline_steps = max_streamline_steps
-        self.reference = nib.load(reference)
+        self.reference = reference
         self.reference_affine = self.reference.affine
         self.reference_data = self.reference.get_fdata()
         self.oracle_reward = oracle_reward
@@ -101,7 +101,7 @@ class RolloutEnvironment(object):
             format_action_func: Callable[[np.ndarray], np.ndarray],
             prob: float = 1.1,
             dynamic_prob: bool = False,
-            render: bool = True
+            render: bool = False
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         _prob = prob  # Copy for dynamic probability adjustment during rollout
 
@@ -125,7 +125,10 @@ class RolloutEnvironment(object):
             # Can't backtrack, because we're at the start or every streamline ends correctly (in the target).
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
+        streamline_copy_start = time.time()
         backtracked_streamlines = streamlines.copy()  # TODO: Avoid copying the entire streamlines each time
+        streamline_copy_end = time.time()
+        print("Streamline copy time: ", streamline_copy_end - streamline_copy_start)
         backtracked_streamlines[backtrackable_idx, backup_length:current_length, :] = 0  # Backtrack on backup_length
         rollouts = np.repeat(backtracked_streamlines[None, ...], self.n_rollouts,
                              axis=0)  # Copy the backtracked streamlines in a new dim for each rollout.

@@ -809,3 +809,6 @@ class BaseEnv(object):
         which streamlines should stop.
         """
         pass
+
+    def set_rollout_agent(self, agent: ActorCritic):
+        self.rollout_env.set_rollout_agent(agent)

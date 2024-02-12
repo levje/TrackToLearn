@@ -8,6 +8,7 @@ from comet_ml import experiment  # noqa: F401 ugh
 import torch
 from comet_ml import Experiment as CometExperiment
 
+from TrackToLearn.experiment.experiment import add_rollout_args
 from TrackToLearn.algorithms.sac_auto import SACAuto
 from TrackToLearn.experiment.train import (TrackToLearnTraining,
                                            add_training_args)
@@ -54,7 +55,8 @@ class SACAutoTrackToLearnTraining(TrackToLearnTraining):
             {'algorithm': 'SACAuto',
              'alpha': self.alpha,
              'batch_size': self.batch_size,
-             'replay_size': self.replay_size})
+             'replay_size': self.replay_size
+             })
 
         super().save_hyperparameters()
 
@@ -91,6 +93,7 @@ def parse_args():
         formatter_class=RawTextHelpFormatter)
     add_training_args(parser)
     add_sac_auto_args(parser)
+    add_rollout_args(parser)
 
     arguments = parser.parse_args()
     return arguments

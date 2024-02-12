@@ -37,7 +37,7 @@ DEST_FOLDER = os.path.join(EXPERIMENTS_FOLDER, EXPERIMENT, ID, str(SEED))
 
 dataset_file = os.path.join(DATASET_FOLDER, 'datasets', SUBJECT_ID, f'{SUBJECT_ID}.hdf5')
 reference_file = os.path.join(DATASET_FOLDER, 'datasets', SUBJECT_ID, 'masks', f'{SUBJECT_ID}_wm.nii.gz')
-filename = f'tractogram_{EXPERIMENT}_{ID}_{SUBJECT_ID}.tck'
+filename = f'tractogram_{EXPERIMENT}_{ID}.tck'
 
 for n_rollouts in list_n_rollouts:
     for backup_size in list_backup_size:
@@ -46,7 +46,7 @@ for n_rollouts in list_n_rollouts:
                 print(f"Starting validation with n-rollouts for search {SEARCH_ID}: {n_rollouts}, backup_size: {backup_size}, extra_n_steps: {extra_n_steps}, roll_n_steps: {roll_n_steps}")
 
                 # Execute ttl_validation.py command
-                validation_cmd = f"ttl_validation.py {DEST_FOLDER} {EXPERIMENT} {ID} {dataset_file} {SUBJECT_ID} {reference_file} {DEST_FOLDER}/model {DEST_FOLDER}/model/hyperparameters.json {DEST_FOLDER}/{filename} --prob={prob} --npv={npv} --n_actor={n_actor} --min_length={min_length} --max_length={max_length} --use_gpu --binary_stopping_threshold=0.1 --fa_map={DATASET_FOLDER}/datasets/{SUBJECT_ID}/dti/{SUBJECT_ID}_fa.nii.gz --scoring_data={SCORING_DATA} --do_rollout --n_rollouts={n_rollouts} --backup_size={backup_size} --extra_n_steps={extra_n_steps} --roll_n_steps={roll_n_steps} --dense_oracle_weighting=1.0 --oracle_checkpoint='epoch_49_fibercup_transformer.ckpt'"
+                validation_cmd = f"ttl_validation.py {DEST_FOLDER} {EXPERIMENT} {ID} {dataset_file} {DEST_FOLDER}/model {DEST_FOLDER}/model/hyperparameters.json --rng_seed={SEED} --prob={prob} --npv={npv} --n_actor={n_actor} --min_length={min_length} --max_length={max_length} --use_gpu --fa_map={DATASET_FOLDER}/datasets/{SUBJECT_ID}/dti/{SUBJECT_ID}_fa.nii.gz --scoring_data={SCORING_DATA} --do_rollout --n_rollouts={n_rollouts} --backup_size={backup_size} --extra_n_steps={extra_n_steps} --roll_n_steps={roll_n_steps} --dense_oracle_weighting=1.0 --oracle_checkpoint='epoch_49_fibercup_transformer.ckpt'"
                 run_command(validation_cmd)
 
                 validation_folder = os.path.join(DEST_FOLDER, f'scoring_{prob}_{SUBJECT_ID}_{npv}')

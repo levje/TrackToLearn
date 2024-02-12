@@ -127,6 +127,13 @@ class TrackToLearnTraining(TrackToLearnExperiment):
 
         self.use_comet = train_dto['use_comet']
 
+        # TODO: Define those parameters for training (look implementation in base environment).
+        self.do_rollout = train_dto['do_rollout']
+        self.backup_size = train_dto['backup_size']
+        self.n_rollouts = train_dto['n_rollouts']
+        self.extra_n_steps = train_dto['extra_n_steps']
+        self.roll_n_steps = train_dto['roll_n_steps']
+
         # RNG
         torch.manual_seed(self.rng_seed)
         np.random.seed(self.rng_seed)
@@ -188,6 +195,12 @@ class TrackToLearnTraining(TrackToLearnExperiment):
             'oracle_filter': self.oracle_filter,
             # Tractometer parameters
             'tractometer_weighting': self.tractometer_weighting,
+            # Rollout environment parameters
+            'do_rollout': self.do_rollout,
+            'backup_size': self.backup_size,
+            'n_rollouts': self.n_rollouts,
+            'extra_n_steps': self.extra_n_steps,
+            'roll_n_steps': self.roll_n_steps
         }
 
     def save_hyperparameters(self):
@@ -414,6 +427,7 @@ class TrackToLearnTraining(TrackToLearnExperiment):
 
         # The RL training algorithm
         alg = self.get_alg(max_traj_length)
+        env.set_rollout_agent(alg.agent)
 
         # Save hyperparameters
         self.save_hyperparameters()
