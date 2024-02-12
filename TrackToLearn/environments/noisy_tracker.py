@@ -13,31 +13,24 @@ class NoisyTrackingEnvironment(TrackingEnvironment):
 
     def __init__(
         self,
-        input_volume,
-        tracking_mask,
-        target_mask,
-        seeding_mask,
-        peaks,
-        env_dto,
-        include_mask=None,
-        exclude_mask=None,
+        dataset_file: str,
+        split_id: str,
+        env_dto: dict,
     ):
         """
         Parameters
         ----------
+        dataset_file: str
+            Path to the dataset file
+        split_id: str
+            Split id
+        subjects: list
+            List of subjects
         env_dto: dict
             Dict containing all arguments
         """
 
-        super().__init__(
-            input_volume,
-            tracking_mask,
-            target_mask,
-            seeding_mask,
-            peaks,
-            env_dto,
-            include_mask,
-            exclude_mask)
+        super().__init__(dataset_file, split_id, env_dto)
 
         self.noise = env_dto['noise']
         self.fa_map = None
@@ -158,19 +151,24 @@ class BackwardNoisyTrackingEnvironment(BackwardTrackingEnvironment):
 
     def __init__(
         self,
-        env,
-        env_dto,
+        dataset_file: str,
+        split_id: str,
+        env_dto: dict,
     ):
         """
         Parameters
         ----------
-        env: BaseEnv
-            Forward env
+        dataset_file: str
+            Path to the dataset file
+        split_id: str
+            Split id
+        subjects: list
+            List of subjects
         env_dto: dict
             Dict containing all arguments
         """
 
-        super().__init__(env, env_dto)
+        super().__init__(dataset_file, split_id, env_dto)
 
         self.noise = env_dto['noise']
         self.fa_map = None

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
+set -x
 
 # This should point to your dataset folder
 DATASET_FOLDER=${TRACK_TO_LEARN_DATA}
@@ -22,6 +23,7 @@ n_rollouts=5
 backup_size=1
 extra_n_steps=5
 roll_n_steps=1
+noise=0.1
 
 EXPERIMENT=$1
 ID=$2
@@ -39,19 +41,18 @@ do
 
     dataset_file=$DATASET_FOLDER/datasets/${SUBJECT_ID}/${SUBJECT_ID}.hdf5
     reference_file=$DATASET_FOLDER/datasets/${SUBJECT_ID}/dti/${SUBJECT_ID}_fa.nii.gz
-    filename=tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}".tck
+    filename=tractogram_"${EXPERIMENT}"_"${ID}"_"${SUBJECT_ID}"_"${SEED}".tck
 
     ttl_validation.py \
       "$DEST_FOLDER" \
       "$EXPERIMENT" \
       "$ID" \
       "${dataset_file}" \
-      "${SUBJECT_ID}" \
-      "${reference_file}" \
       $DEST_FOLDER/model \
       $DEST_FOLDER/model/hyperparameters.json \
-      ${DEST_FOLDER}/${filename} \
+      --rng_seed=${SEED} \
       --prob="${prob}" \
+      --noise=${noise} \
       --npv="${npv}" \
       --n_actor="${n_actor}" \
       --min_length="$min_length" \
@@ -70,6 +71,7 @@ do
 
     validation_folder=$DEST_FOLDER/scoring_"${SUBJECT_ID}"_${npv}_test_track
 
+    validation_folder=$DEST_FOLDER/scoring_"${SUBJECT_ID}"_${npv}_${noise}
     mkdir -p $validation_folder
 
     mv $DEST_FOLDER/${filename} $validation_folder/
