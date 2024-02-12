@@ -181,11 +181,12 @@ class RolloutEnvironment(object):
         true_lengths[true_lengths == 0] = backup_length
 
         # Get the best rollout for each streamline.
-        best_rollouts, new_flags, best_true_lengths, rollouts_scores = self._filter_best_rollouts(rollouts, flags, backtrackable_idx, true_lengths)
-        streamline_improvement_idx = self._filter_worse_rollouts(current_length, best_rollouts, best_true_lengths, flags)
+        best_rollouts, new_flags, best_true_lengths, rollouts_scores = \
+            self._filter_best_rollouts(rollouts, flags, backtrackable_idx, true_lengths)
+        streamline_improvement_idx = self._filter_worse_rollouts(current_length, best_true_lengths, flags)
 
         if render:
-            self._render_screenshot(initial_backtracked_length, backup_length, current_length, streamlines, rollouts,
+            self._render_snapshot(initial_backtracked_length, backup_length, current_length, streamlines, rollouts,
                                     flags, backtrackable_idx, true_lengths, rollouts_scores)
 
         # Squash the retained rollouts to the current_length

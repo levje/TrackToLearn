@@ -87,27 +87,17 @@ class BaseEnv(object):
 
         """
         self._init_generic_env(
-            input_volume,
-            tracking_mask,
-            target_mask,
-            seeding_mask,
-            peaks,
-            env_dto,
-            include_mask,
-            exclude_mask
+            subject_data,
+            split_id,
+            env_dto
         )
 
 
     def _init_generic_env(
         self,
-        input_volume: MRIDataVolume,
-        tracking_mask: MRIDataVolume,
-        target_mask: MRIDataVolume,
-        seeding_mask: MRIDataVolume,
-        peaks: MRIDataVolume,
-        env_dto: dict,
-        include_mask: MRIDataVolume = None,
-        exclude_mask: MRIDataVolume = None
+        subject_data: str,
+        split_id: str,
+        env_dto: dict
     ) -> None:
         # TODO: Split this into several functions, which can be reused in `set_step_size`
         # If the subject data is a string, it is assumed to be a path to
@@ -194,6 +184,13 @@ class BaseEnv(object):
             self.oracle_weighting = env_dto['dense_oracle_weighting']
         else:
             self.oracle_weighting = env_dto['sparse_oracle_weighting']
+
+        # Rollouts!
+        self.do_rollout = env_dto['do_rollout']
+        self.roll_n_steps = env_dto['roll_n_steps']
+        self.n_rollouts = env_dto['n_rollouts']
+        self.backup_size = env_dto['backup_size']
+        self.extra_n_steps = env_dto['extra_n_steps']
 
         # Other parameters
         self.rng = env_dto['rng']
@@ -310,7 +307,7 @@ class BaseEnv(object):
         self.stopping_criteria[StoppingFlags.STOPPING_TARGET] = TargetStoppingCriterion(
             self.target_mask.data,
             threshold=0.5,  # TODO: What should be a good threshold?
-            min_nb_steps=int(min_length_mm/step_size_mm)  # TODO: What should be a good number of minimum steps?
+            min_nb_steps=int(self.min_length_mm/self.step_size_mm)  # TODO: What should be a good number of minimum steps?
         )
 
         # Streamline loop criterion (not used, too slow)
@@ -329,13 +326,13 @@ class BaseEnv(object):
         # Stopping criterion according to an oracle
         if self.oracle_checkpoint:
             if self.oracle_stopping_criterion:
-                self.stopping_criteria[compute_reward
+                self.stopping_criteria[
+                    StoppingFlags.STOPPING_ORACLE] = OracleStoppingCriterion(
+                    self.oracle_checkpoint,
                     self.min_nb_steps * 5,
                     self.reference,
                     self.affine_vox2rasmm,
                     self.device)
-
-
 
         # Mask criterion (either binary or CMC)
         if self.cmc:
@@ -426,16 +423,12 @@ class BaseEnv(object):
                                                   self.step_size,
                                                   self.min_nb_steps)
 
-        # Rollouts!
-        self.do_rollout = env_dto['do_rollout']
-        self.roll_n_steps = env_dto['roll_n_steps']
-
         self.rollout_env = RolloutEnvironment(
             self.reference,
             None,
-            env_dto['n_rollouts'],
-            env_dto['backup_size'],
-            env_dto['extra_n_steps'],
+            self.n_rollouts,
+            self.backup_size,
+            self.extra_n_steps,
             self.max_nb_steps,
             self.oracle_reward,
             self.reward_function
