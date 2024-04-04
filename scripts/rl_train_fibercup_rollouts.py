@@ -42,7 +42,7 @@ npv = 33
 theta = 30
 n_actor = 4096
 
-EXPERIMENT = 'SAC_Auto_FiberCupTrainOracle'
+EXPERIMENT = 'SAC_Auto_Rollouts_FiberCupTrainOracle'
 ID = datetime.now().strftime("%Y-%m-%d-%H_%M_%S")
 
 seeds = [1111]
@@ -81,7 +81,8 @@ for rng_seed in seeds:
                     '--sparse_oracle_weighting=10.0',
                     '--oracle_stopping',
                     '--oracle_checkpoint=epoch_49_fibercup_transformer.ckpt',
-                    '--workspace=mrzarfir'
+                    '--workspace=mrzarfir',
+                    '--do_rollout'
                     ])
 
     if completed_process.returncode != 0:

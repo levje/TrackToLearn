@@ -14,8 +14,19 @@ from TrackToLearn.environments.reward import Reward, RewardFunction
 from TrackToLearn.experiment.oracle_validator import OracleValidator
 from dipy.tracking.streamline import length, transform_streamlines
 import time
-
+from functools import wraps
+import cProfile
 from fury import actor, window
+
+
+def profile(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        profiler = cProfile.Profile()
+        result = profiler.runcall(func, *args, **kwargs)
+        profiler.print_stats()
+        return result
+    return wrapper
 
 
 class RolloutEnvironment(object):
@@ -41,6 +52,9 @@ class RolloutEnvironment(object):
         self.reference_data = self.reference.get_fdata()
         self.oracle_reward = oracle_reward
         self.reward_function = reward_function
+
+        self.n_times = 1
+        self.mean_rollout_time = 0
 
     # Specific constructor to avoid creating another RolloutEnvironment from the BaseEnv's constructor.
 
@@ -90,6 +104,7 @@ class RolloutEnvironment(object):
 
         return should_stop, flags
 
+    #@profile
     def rollout(
             self,
             streamlines: np.ndarray,
@@ -103,6 +118,7 @@ class RolloutEnvironment(object):
             dynamic_prob: bool = False,
             render: bool = False
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        rollout_start_time = time.time()
         _prob = prob  # Copy for dynamic probability adjustment during rollout
 
         # The agent initialisation should be made in the __init__. The environment should be remodeled to allow
@@ -125,10 +141,8 @@ class RolloutEnvironment(object):
             # Can't backtrack, because we're at the start or every streamline ends correctly (in the target).
             return streamlines, np.array([], dtype=in_stopping_idx.dtype), in_stopping_idx, in_stopping_flags
 
-        streamline_copy_start = time.time()
         backtracked_streamlines = streamlines.copy()  # TODO: Avoid copying the entire streamlines each time
-        streamline_copy_end = time.time()
-        print("Streamline copy time: ", streamline_copy_end - streamline_copy_start)
+
         backtracked_streamlines[backtrackable_idx, backup_length:current_length, :] = 0  # Backtrack on backup_length
         rollouts = np.repeat(backtracked_streamlines[None, ...], self.n_rollouts,
                              axis=0)  # Copy the backtracked streamlines in a new dim for each rollout.
@@ -214,8 +228,16 @@ class RolloutEnvironment(object):
 
         self._check_if_streamline_has_coordinate_zero(streamlines)
         self._check_if_continuing_streamline_is_zero(streamlines, current_length, new_continuing_streamlines)
+        self._update_and_show_rollout_time(rollout_start_time, time.time())
 
         return streamlines, new_continuing_streamlines, in_stopping_idx, in_stopping_flags
+
+    def _update_and_show_rollout_time(self, rollout_start_time, rollout_end_time):
+        rollout_time = rollout_end_time - rollout_start_time
+        self.mean_rollout_time = self.mean_rollout_time + (rollout_time - self.mean_rollout_time) / self.n_times
+        self.n_times += 1
+        if self.n_times % 10 == 0:
+            print(f"Average rollout time: {self.mean_rollout_time:.5f}s")
 
     # TODO: Remove once the zero coordinates are fixed.
     @staticmethod

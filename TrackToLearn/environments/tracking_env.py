@@ -191,7 +191,6 @@ class TrackingEnvironment(BaseEnv):
             and self.oracle_reward is not None \
             and (self.stopping_idx.size > 0) \
             and (self.length % self.roll_n_steps == 0):
-            rollout_start_time = time.time()
 
             new_streamlines, new_continuing_streamlines, stopping_idx, stopping_flags = self.rollout_env.rollout(
                                     self.streamlines,
@@ -202,9 +201,6 @@ class TrackingEnvironment(BaseEnv):
                                     self._format_state,
                                     self._format_actions,
                                     prob=0.1)
-
-            rollout_end_time = time.time()
-            print(f"Rollout time: {rollout_end_time - rollout_start_time}")
 
             self.streamlines = new_streamlines
             self.new_continue_idx = np.concatenate((self.new_continue_idx, new_continuing_streamlines))
