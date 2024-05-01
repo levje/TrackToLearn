@@ -5,6 +5,7 @@ from os.path import join as pjoin
 
 import numpy as np
 import torch
+import time
 
 from TrackToLearn.algorithms.rl import RLAlgorithm
 from TrackToLearn.algorithms.shared.utils import mean_losses, mean_rewards
@@ -299,20 +300,46 @@ class TrackToLearnTraining(Experiment):
 
             # Time to do a valid run and display stats
             if i_episode % self.log_interval == 0:
+                print("Validation run!")
                 # Validation run
+
+                print("Loading subject...", end="")
+                start = time.time()
                 valid_env.load_subject()
+                print(f" in {time.time() - start} seconds")
+
+                print("Tracking and validating...", end="")
+                start = time.time()
                 valid_tractogram, valid_reward = \
                     valid_tracker.track_and_validate(valid_env)
+                print(f" in {time.time() - start} seconds")
+
+                print("Computing stopping stats...", end="")
+                start = time.time()
                 stopping_stats = self.stopping_stats(valid_tractogram)
-                print(stopping_stats)
+                print(f" in {time.time() - start} seconds")
+
+                print(stopping_stats) # DO NOT REMOVE
 
                 if self.use_comet:
+                    print("Logging losses", end="")
+                    start = time.time()
                     self.comet_monitor.log_losses(stopping_stats, i_episode)
+                    print(f" in {time.time() - start} seconds")
+                
+                print("Saving tractogram...", end="")
+                start = time.time()
                 filename = self.save_rasmm_tractogram(
                     valid_tractogram, valid_env.subject_id,
                     valid_env.affine_vox2rasmm, valid_env.reference)
+                print(f" in {time.time() - start} seconds")
+
+                print("Scoring tractogram...", end="")
+                start = time.time()
                 scores = self.score_tractogram(
                     filename, valid_env)
+                print(f" in {time.time() - start} seconds")
+                
                 print(scores)
 
                 # Display what the network is capable-of "now"
