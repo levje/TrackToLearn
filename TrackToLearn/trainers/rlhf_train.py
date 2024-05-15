@@ -9,8 +9,15 @@ from TrackToLearn.experiment.tractometer_validator import TractometerValidator
 from TrackToLearn.experiment.oracle_validator import OracleValidator
 import numpy as np
 from TrackToLearn.algorithms.shared.utils import mean_losses, mean_rewards
+from nibabel.streamlines import TrkFile
 import torch
 import tempfile
+import os
+from dipy.io.streamline import load_tractogram
+from TrackToLearn.filterers.tractometer_filterer import TractometerFilterer
+from dipy.io.stateful_tractogram import StatefulTractogram
+from typing import Union
+
 
 class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
     def __init__(
@@ -23,14 +30,31 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             comet_experiment,
         )
 
-        self.fliterers = [TractometerValidator()]
+        self.filterers = [TractometerFilterer()]
 
 
-    def generate_tractogram(self):
-        pass
+    def generate_and_save_tractogram(self, tracker: Tracker, env: BaseEnv, save_dir: str):
+        tractogram = tracker.track(self.tracker_env, TrkFile)
 
-    def filter_tractogram(self):
-        pass
+        filename = self.save_rasmm_tractogram(
+            tractogram, env.subject_id,
+            env.affine_vox2rasmm, env.reference,
+            save_dir
+        )
+
+        return filename
+
+    def filter_tractogram(self, tractogram_file: str, env: BaseEnv, out_dir: str, base_dir: Union[tempfile.TemporaryDirectory, str]):
+        """ Filter the tractogram (0 for invalid, 1 for valid) using the filterers
+
+        TODO: Implement for more than one filterer
+        """
+
+        tractograms = [tractogram_file]
+        filterer = self.filterers[0] # TODO: Implement for more than one filterer
+        gt_config = env.gt_config
+        filtered_tractogram = filterer(env.reference, tractograms, gt_config, out_dir, scored_extension="trk", tmp_base_dir=base_dir)
+        return tractogram
 
     def select_streamline_pairs(self):
         pass
@@ -41,14 +65,14 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
     def train_reward(self):
         pass
 
-    def train_rl_agent(self, alg, env, valid_env):
+    def train_rl_agent(self, alg: RLAlgorithm, env: BaseEnv, valid_env: BaseEnv):
         super().rl_train(alg, env, valid_env) # Train the agent
 
     def rl_train(
         self,
         alg: RLAlgorithm,
         env: BaseEnv,
-        valid_env: BaseEnv,
+        valid_env: BaseEnv
     ):
         """ Train the RL algorithm for N epochs. An epoch here corresponds to
         running tracking on the training set until all streamlines are done.
@@ -68,11 +92,15 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         # Start by pretraining the RL agent to get reasonable results.
         self.train_rl_agent(alg, env, valid_env)
 
+        self.tracker_env = self.get_valid_env()
+        self.tracker = Tracker(
+            alg, self.n_actor, prob=1.0, compress=0.0)
+
         # Setup filterers which will be used to filter tractograms
         # for the RLHF pipeline.  
-        self.filterers.append(TractometerValidator(
-            self.scoring_data, self.tractometer_reference,
-            dilate_endpoints=self.tractometer_dilate))
+        # self.filterers.append(TractometerValidator(
+        #     self.scoring_data, self.tractometer_reference,
+        #     dilate_endpoints=self.tractometer_dilate))
 
         # RLHF loop to fine-tune the oracle to the RL agent and vice-versa.
         num_iters = 5
@@ -80,10 +108,10 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Generate a tractogram
-                tractogram = self.generate_tractogram()
+                tractogram = self.generate_and_save_tractogram(tracker, self.tracker_env, tmpdir)
 
                 # Filter the tractogram
-                scored_tractogram = self.filter_tractogram(tractogram) # Need to filter for each filterer and keep the same order.
+                scored_tractogram = self.filter_tractogram(tractogram, tmpdir) # Need to filter for each filterer and keep the same order.
 
                 # Select streamline pairs that originate from the same seed
                 # We have the streamlines themselves and the scores for each filterer
@@ -119,42 +147,7 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         """ Prepare the environment, algorithm and trackers and run the
         training loop
         """
-
-        assert torch.cuda.is_available(), \
-            "Training is only supported on CUDA devices."
-
-        # Instantiate environment. Actions will be fed to it and new
-        # states will be returned. The environment updates the streamline
-        # internally
-        env = self.get_env()
-        valid_env = self.get_valid_env()
-
-        # Get example state to define NN input size
-        self.input_size = env.get_state_size()
-        self.action_size = env.get_action_size()
-
-        # Voxel size
-        self.voxel_size = env.get_voxel_size()
-        # SH Order (used for tracking afterwards)
-        self.target_sh_order = env.target_sh_order
-
-        max_traj_length = env.max_nb_steps
-
-        # The RL training algorithm
-        alg = self.get_alg(max_traj_length)
-
-        # Save hyperparameters
-        self.save_hyperparameters()
-
-        # Setup monitors to monitor training as it goes along
-        self.setup_monitors()
-
-        # Setup comet monitors to monitor experiment as it goes along
-        if self.use_comet:
-            self.setup_comet()
-
-        # Start training !
-        self.rl_train(alg, env, valid_env)
+        super(RlhfTrackToLearnTraining, self).run()
 
 def add_rlhf_training_args(parser):
     return parser    

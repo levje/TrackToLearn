@@ -1,12 +1,12 @@
 #!/bin/bash
 
 python TrackToLearn/trainers/sac_auto_train.py \
-    "data/experiments/ISMRM-TractOracle-RL-FullComplete" \
-    "ISMRM-TractOracle-RL-FullComplete" \
-    "NoSearch" \
+    "data/experiments/ISMRM-TractOracleRL-NewOracle-Step075" \
+    "ISMRM-TractOracleRL-NewOracle-Step075" \
+    "Step075" \
     "data/datasets/ismrm2015/ismrm2015.hdf5" \
     --max_ep 1000 \
-    --oracle_checkpoint custom_models/ismrm_complete_oracle/ismrm_complete_oracle.ckpt \
+    --oracle_checkpoint custom_models/ismrm2015_new_oracle_step075/ismrm2015_new_oracle_step075.ckpt \
     --oracle_validator \
     --oracle_stopping_criterion \
     --oracle_bonus 10.0 \

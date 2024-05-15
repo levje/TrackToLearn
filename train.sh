@@ -1,12 +1,12 @@
 #!/bin/bash
 
 python TrackToLearn/trainers/sac_auto_train.py \
-    "data/experiments/test" \
-    "test" \
-    "NoSearch" \
+    "data/experiments/Fibercup-TractOracle-RL-FullComplete" \
+    "Fibercup-TractOracle-RL-FullComplete" \
+    "FibercupComplete" \
     "data/datasets/fibercup/fibercup.hdf5" \
-    --max_ep 5 \
-    --oracle_checkpoint "models/oracle_fibercup_simple.ckpt" \
+    --max_ep 1000 \
+    --oracle_checkpoint "custom_models/fibercup_oracle_complete/fibercup_oracle_complete.ckpt" \
     --oracle_validator \
     --oracle_stopping_criterion \
     --oracle_bonus 10.0 \
@@ -22,4 +22,6 @@ python TrackToLearn/trainers/sac_auto_train.py \
     --max_length 200 \
     --noise 0.0 \
     --batch_size 4096 \
-    --replay_size 1000000
+    --replay_size 1000000 \
+    --lr 0.0005 \
+    --gamma 0.95
