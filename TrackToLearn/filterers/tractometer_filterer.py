@@ -1,92 +1,102 @@
-from TrackToLearn.filterers.filterer import Filterer
-from dipy.io.stateful_tractogram import StatefulTractogram
-
-import argparse
+import logging
+import os
 import tempfile
+from collections import namedtuple
+
 import numpy as np
-import subprocess
+from dipy.io.streamline import load_tractogram
+from scilpy.segment.tractogram_from_roi import segment_tractogram_from_roi
+from scilpy.tractanalysis.scoring import compute_tractometry
 
 from dipy.io.streamline import load_tractogram
 from dipy.io.streamline import save_tractogram
-import os
+
+from TrackToLearn.filterers.filterer import Filterer
+from TrackToLearn.experiment.tractometer_validator import load_and_verify_everything
 from pathlib import Path
-from typing import Union
 
 class TractometerFilterer(Filterer):
-    
-    def __init__(self):
-        super(TractometerFilterer, self).__init__()
 
-    # TODO: This is copied from the TractOracle's generate_and_score_tractograms.py that was naively
-    # implemented to generate streamline datasets. This should be refactored to avoid using subprocesses
-    # and call directly the Tractometer's API.
-    def __call__(self, reference, tractograms, gt_config, out_dir, scored_extension="trk", tmp_base_dir: str = None):
-        """Filter a list of tracts."""
-        reference = Path(reference)
-        gt_config = Path(gt_config)
-        out_dir = Path(out_dir)
+    def __init__(
+        self,
+        base_dir,
+        reference,
+        dilate_endpoints=1,
+    ):
+        self.name = 'Tractometer'
+        self.gt_config = os.path.join(base_dir, 'scil_scoring_config.json')
+        self.gt_dir = base_dir
+        self.dilation_factor = dilate_endpoints
 
-        assert gt_config.exists(), f"Ground truth config {gt_config} does not exist."
-        assert reference.exists(), f"Reference {reference} does not exist."
+        assert os.path.exists(reference), f"Reference {reference} does not exist."
+        self.reference = reference
 
-        filtered_tractograms = []
+        # Load
+        (self.gt_tails, self.gt_heads, self.bundle_names, self.list_rois,
+         self.bundle_lengths, self.angles, self.orientation_lengths,
+         self.abs_orientation_lengths, self.inv_all_masks, self.gt_masks,
+         self.any_masks) = \
+            load_and_verify_everything(
+                reference,
+                self.gt_config,
+                self.gt_dir,
+                False)
 
-        for tractogram in tractograms:
+    def __call__(self, tractogram, out_dir, scored_extension="trk"):
+        assert os.path.exists(tractogram), f"Tractogram {tractogram} does not exist."
+        filtered_path = os.path.join(out_dir, "scored_{}.{}".format(Path(tractogram).stem, scored_extension))
+        logging.info("Loading tractogram.")
+        sft = load_tractogram(tractogram, self.reference,
+                            bbox_valid_check=True, trk_header_check=True)
+        
+        if len(sft.streamlines) == 0:
+            save_tractogram(sft, filtered_path)
+            return filtered_path
 
-            tractogram_path = Path(tractogram)
-            assert tractogram_path.exists(), f"Tractogram {tractogram} does not exist."
+        args_mocker = namedtuple('args', [
+            'compute_ic', 'save_wpc_separately', 'unique', 'reference',
+            'bbox_check', 'out_dir', 'dilate_endpoints', 'no_empty'])
 
-            with tempfile.TemporaryDirectory(dir=tmp_base_dir) as tmp:
+        with tempfile.TemporaryDirectory() as temp:
+            
+            args = args_mocker(
+                False, False, True, self.reference, False, temp,
+                self.dilation_factor, False)
 
-                tmp_path = Path(tmp)
+            # Segment VB, WPC, IB
+            (vb_sft_list, wpc_sft_list, ib_sft_list, nc_sft,
+            ib_names, _) = segment_tractogram_from_roi(
+                sft, self.gt_tails, self.gt_heads, self.bundle_names,
+                self.bundle_lengths, self.angles, self.orientation_lengths,
+                self.abs_orientation_lengths, self.inv_all_masks, self.any_masks,
+                self.list_rois, args)
+            
+            scored_tractogram = self._merge_with_scores(vb_sft_list, nc_sft, filtered_path)
+            # save_tractogram(scored_tractogram, filtered_path) # Replace saving with directly putting that data into a hdf5 file.
 
-                scoring_args = [
-                    tractogram_path, # in_tractogram
-                    gt_config, # gt_config
-                    tmp_path, # out_dir
-                    "--reference", reference
-                ]
-                c_proc = subprocess.run(["pwd"])
-                # Segment and score the tractogram
-                c_proc = subprocess.run(["scil_tractogram_segment_and_score.py", *scoring_args])
-                c_proc.check_returncode() # Throws if the process failed
+        return scored_tractogram
 
-                out_path = out_dir / "scored_{}.{}".format(tractogram_path.stem, scored_extension)
-                self._merge_with_scores(reference, tmp_path / "segmented_VB", tmp_path / "IS.trk", out_path)
-                
-                filtered_tractograms.append(out_path)
-
-        return filtered_tractograms
-
-    def _merge_with_scores(self, reference, bundles_dir, inv_streamlines, output):
+    def _merge_with_scores(self, vb_sft_list, inv_tractogram, output):
         """Merge the streamlines with the scores."""
-        file_list = os.listdir(bundles_dir)
         main_tractogram = None
 
         # Add valid streamlines
-        for file in file_list:
-            tractogram = load_tractogram(os.path.join(bundles_dir, file), str(reference))
-            num_streamlines = len(tractogram.streamlines)
+        for bundle in vb_sft_list:
+            num_streamlines = len(bundle.streamlines)
 
-            tractogram.data_per_streamline['score'] = np.ones(num_streamlines, dtype=np.float32)
+            bundle.data_per_streamline['score'] = np.ones(num_streamlines, dtype=np.float32)
 
             if main_tractogram is None:
-                main_tractogram = tractogram
+                main_tractogram = bundle
             else:
-                main_tractogram = main_tractogram + tractogram
+                main_tractogram = main_tractogram + bundle
 
-        assert inv_streamlines.exists(), f"Invalid streamlines {inv_streamlines} does not exist."
-        assert Path(reference).exists(), f"Reference {reference} does not exist."
 
         # Add invalid streamlines
-        inv_tractogram = load_tractogram(str(inv_streamlines), str(reference))
         num_streamlines = len(inv_tractogram.streamlines)
-        inv_tractogram.data_per_streamline['score'] = np.zeros(num_streamlines, dtype=np.float32)
+        if num_streamlines > 0:
+            inv_tractogram.data_per_streamline['score'] = np.zeros(num_streamlines, dtype=np.float32)
 
-        main_tractogram = main_tractogram + inv_tractogram
-
-        assert main_tractogram is not None, "No valid streamlines found."
+        main_tractogram = main_tractogram + inv_tractogram if main_tractogram is not None else inv_tractogram
+        return main_tractogram
         
-        print(f"Main tractogram has {len(main_tractogram.streamlines)} streamlines.")
-        print(f"Saving tractogram to {output}")
-        save_tractogram(main_tractogram, str(output))

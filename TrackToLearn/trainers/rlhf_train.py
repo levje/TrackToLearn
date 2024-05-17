@@ -1,6 +1,7 @@
 from comet_ml import Experiment as CometExperiment
+from comet_ml import OfflineExperiment as CometOfflineExperiment
 import argparse
-from TrackToLearn.trainers.sac_auto_train import SACAutoTrackToLearnTraining
+from TrackToLearn.trainers.sac_auto_train import SACAutoTrackToLearnTraining, add_sac_auto_args
 from TrackToLearn.trainers.train import add_training_args
 from TrackToLearn.algorithms.rl import RLAlgorithm
 from TrackToLearn.environments.env import BaseEnv
@@ -9,17 +10,46 @@ from TrackToLearn.experiment.tractometer_validator import TractometerValidator
 from TrackToLearn.experiment.oracle_validator import OracleValidator
 import numpy as np
 from TrackToLearn.algorithms.shared.utils import mean_losses, mean_rewards
-from nibabel.streamlines import TrkFile
+from nibabel.streamlines import TrkFile, TckFile
+from nibabel.streamlines.tractogram import Tractogram
 import torch
 import tempfile
 import os
 from dipy.io.streamline import load_tractogram
 from TrackToLearn.filterers.tractometer_filterer import TractometerFilterer
-from dipy.io.stateful_tractogram import StatefulTractogram
+from dipy.io.stateful_tractogram import Origin, Space, StatefulTractogram
 from typing import Union
+from dipy.io.streamline import save_tractogram
+from nibabel.streamlines import save
+from dipy.io.utils import get_reference_info, create_tractogram_header
+from typing import List
+import h5py
+from dipy.tracking.streamline import set_number_of_points
 
+
+"""
+In classic RLHF, the reward network is trained on predictions. Here, we will train the reward network
+in the loop with the RL agent using filtered tractograms from Extractor. However, if we want to train
+the reward network with multiple filtering algorithms (i.e. Tractometer, COMMIT, Extractor, etc.), we
+could use the following approach to learn with "preference" data:
+    
+    mu(1) = smax(nb of times that streamline was classified as valid in the ensemble of filterers)
+    mu(2) = smax(nb of times that streamline was classified as valid in the ensemble of filterers)
+
+Not sure how slow/fast that would be to train in practice, but that preference distribution could be
+used as a target for the reward network.
+
+N.B: Maybe the "nb of times that streamline was classified can be a weighted sum of all the filtering
+methods (e.g. more weight on Extractor than COMMIT for example)."
+
+N.B: The pair of streamlines for comparison should originate from the same seed.
+
+N.B: Instead of pairs, maybe a ranking system would be better, as it shows better performance in some scenarios
+of the litterature.
+"""
 
 class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
+    
     def __init__(
         self,
         rlhf_train_dto: dict,
@@ -30,43 +60,11 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             comet_experiment,
         )
 
-        self.filterers = [TractometerFilterer()]
-
-
-    def generate_and_save_tractogram(self, tracker: Tracker, env: BaseEnv, save_dir: str):
-        tractogram = tracker.track(self.tracker_env, TrkFile)
-
-        filename = self.save_rasmm_tractogram(
-            tractogram, env.subject_id,
-            env.affine_vox2rasmm, env.reference,
-            save_dir
-        )
-
-        return filename
-
-    def filter_tractogram(self, tractogram_file: str, env: BaseEnv, out_dir: str, base_dir: Union[tempfile.TemporaryDirectory, str]):
-        """ Filter the tractogram (0 for invalid, 1 for valid) using the filterers
-
-        TODO: Implement for more than one filterer
+    def run(self):
+        """ Prepare the environment, algorithm and trackers and run the
+        training loop
         """
-
-        tractograms = [tractogram_file]
-        filterer = self.filterers[0] # TODO: Implement for more than one filterer
-        gt_config = env.gt_config
-        filtered_tractogram = filterer(env.reference, tractograms, gt_config, out_dir, scored_extension="trk", tmp_base_dir=base_dir)
-        return tractogram
-
-    def select_streamline_pairs(self):
-        pass
-
-    def rlhf_loss(self):
-        pass
-
-    def train_reward(self):
-        pass
-
-    def train_rl_agent(self, alg: RLAlgorithm, env: BaseEnv, valid_env: BaseEnv):
-        super().rl_train(alg, env, valid_env) # Train the agent
+        super(RlhfTrackToLearnTraining, self).run()
 
     def rl_train(
         self,
@@ -90,17 +88,17 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             """
 
         # Start by pretraining the RL agent to get reasonable results.
-        self.train_rl_agent(alg, env, valid_env)
+        # super().rl_train(alg, env, valid_env)
 
         self.tracker_env = self.get_valid_env()
         self.tracker = Tracker(
             alg, self.n_actor, prob=1.0, compress=0.0)
 
         # Setup filterers which will be used to filter tractograms
-        # for the RLHF pipeline.  
-        # self.filterers.append(TractometerValidator(
-        #     self.scoring_data, self.tractometer_reference,
-        #     dilate_endpoints=self.tractometer_dilate))
+        # for the RLHF pipeline.
+        self.filterers = [
+            TractometerFilterer(self.scoring_data, self.tractometer_reference, dilate_endpoints=self.tractometer_dilate)
+        ]
 
         # RLHF loop to fine-tune the oracle to the RL agent and vice-versa.
         num_iters = 5
@@ -108,46 +106,148 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Generate a tractogram
-                tractogram = self.generate_and_save_tractogram(tracker, self.tracker_env, tmpdir)
+                tractograms_path = os.path.join(tmpdir, "tractograms")
+                if not os.path.exists(tractograms_path):
+                    os.makedirs(tractograms_path)
+                tractograms = self.generate_and_save_tractograms(self.tracker, self.tracker_env, tractograms_path)
 
                 # Filter the tractogram
-                scored_tractogram = self.filter_tractogram(tractogram, tmpdir) # Need to filter for each filterer and keep the same order.
+                filtered_path = os.path.join(tmpdir, "filtered")
+                if not os.path.exists(filtered_path):
+                    os.makedirs(filtered_path)
+                filtered_tractograms = self.filter_tractograms(tractograms, filtered_path) # Need to filter for each filterer and keep the same order.
 
-                # Select streamline pairs that originate from the same seed
-                # We have the streamlines themselves and the scores for each filterer
-                streamline_pairs = self.select_streamline_pairs()
-
-                # Preference distrubution based on filtering scores
-                # mu(1) = smax(nombre de fois la streamline 1 classée valide)
-                # mu(2) = smax(nombre de fois la streamline 2 classée valide)
-                # TODO
-
-                # Run the reward network on those streamline pairs
-                # TODO
-                rewards = (5, -2)
-
-                # Preference distribution Softmax on last axis for rewards
-                # TODO
-
-                # Compute loss
-                loss = self.rlhf_loss()
-
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+                # Create HDF5 dataset file
+                dataset_file = os.path.join(tmpdir, "dataset.hdf5")
+                self.create_dataset(filtered_tractograms, dataset_file)
 
                 # Train reward model
-                self.train_reward()
+                self.train_reward(dataset_file)
 
             # Train the RL agent
-            self.train_rl_agent(alg, env, valid_env)
+            super().rl_train(alg, env, valid_env)
 
+    def generate_and_save_tractograms(self, tracker: Tracker, env: BaseEnv, save_dir: str):
+        tractogram, _ = tracker.track_and_validate(self.tracker_env) # TODO: Change to only track().
+        filename = self.save_rasmm_tractogram(
+            tractogram,
+            env.subject_id,
+            env.affine_vox2rasmm,
+            env.reference,
+            save_dir,
+            extension='tck')
+        
+        # sft = StatefulTractogram(
+        #     tractogram.streamlines,
+        #     env.reference,
+        #     Space.RASMM,
+        #     origin=Origin.TRACKVIS,
+        #     data_per_streamline=tractogram.data_per_streamline,
+        #     data_per_point=tractogram.data_per_point
+        # )
 
-    def run(self):
-        """ Prepare the environment, algorithm and trackers and run the
-        training loop
+        # filename = "tractogram_{}_{}_{}.tck".format(self.experiment, self.name, env.subject_id)
+        # save_tractogram(sft, os.path.join(save_dir, filename))
+
+        return [filename]
+
+    def filter_tractograms(self, tractograms: str, out_dir: str):
+        """ Filter the tractogram (0 for invalid, 1 for valid) using the filterers
+
+        TODO: Implement for more than one filterer
         """
-        super(RlhfTrackToLearnTraining, self).run()
+        filterer = self.filterers[0]
+
+        filtered_tractograms = []
+        for tractogram in tractograms:
+            # TODO: Implement for more than one filterer
+            filtered_tractogram = filterer(tractogram, out_dir, scored_extension="trk")
+            filtered_tractograms.append(filtered_tractogram)
+        
+        return filtered_tractograms
+
+    def _add_streamlines_to_hdf5(self, hdf_subject, sft, nb_points, total, idx):
+        """ Add the streamlines to the hdf5 file.
+
+        TODO: THIS FUNCTION WAS COPIED FROM TRACTORACLE. MIGHT NEED TO BE REFACTORED OR ADAPTED INSTEAD OF COPIED.
+
+        Parameters
+        ----------
+        hdf_subject: h5py.File
+            HDF5 file to save the dataset to.
+        sft: nib.streamlines.tractogram.Tractogram
+            Streamlines to add to the dataset.
+        nb_points: int, optional
+            Number of points to resample the streamlines to
+        total: int
+            Total number of streamlines in the dataset
+        idx: list
+            List of positions to store the streamlines
+        """
+
+        # Get the scores and the streamlines
+        scores = np.asarray(sft.data_per_streamline['score']).squeeze(-1)
+        # Resample the streamlines
+        streamlines = set_number_of_points(sft.streamlines, nb_points)
+        streamlines = np.asarray(streamlines)
+
+        # Create the dataset if it does not exist
+        if 'streamlines' not in hdf_subject:
+            # Create the group
+            streamlines_group = hdf_subject.create_group('streamlines')
+            # Set the number of points
+            streamlines = np.asarray(streamlines)
+            # 'data' will contain the streamlines
+            streamlines_group.create_dataset(
+                'data', shape=(total, nb_points, streamlines.shape[-1]))
+            # 'scores' will contain the scores
+            streamlines_group.create_dataset('scores', shape=(total))
+
+        streamlines_group = hdf_subject['streamlines']
+        data_group = streamlines_group['data']
+        scores_group = streamlines_group['scores']
+
+        for i, st, sc in zip(idx, streamlines, scores):
+            data_group[i] = st
+            scores_group[i] = sc
+
+
+    def create_dataset(self,
+                       filtered_tractograms: list[StatefulTractogram],
+                       out_file: str):
+        """ Gathers all the filtered tractograms and creates a dataset for the reward model training. 
+        Outputs into a hdf5 file."""
+
+        # Compute the total number of streamlines
+        nb_streamlines = sum([len(sft.streamlines) for sft in filtered_tractograms])
+        nb_points = 128
+        assert nb_streamlines > 0, "No streamlines to create the dataset."
+
+        indices = np.arange(nb_streamlines)
+        np.random.shuffle(indices)
+
+        # Add the streamlines to the dataset
+        with h5py.File(out_file, 'w') as f:
+            f.attrs['version'] = 1
+            f.attrs['nb_points'] = nb_points
+            
+            for sft in filtered_tractograms:
+                sft.to_corner()
+                sft.to_vox()
+                sft_nb_streamlines = len(sft.streamlines)
+                ps_indices = np.random.choice(sft_nb_streamlines, sft_nb_streamlines, replace=False)
+                idx = indices[:sft_nb_streamlines]
+
+                self._add_streamlines_to_hdf5(f, sft[ps_indices], nb_points, nb_streamlines, idx)
+
+                indices = indices[sft_nb_streamlines:]
+        
+        return out_file
+    
+    def train_reward(self, dataset_file: str):
+        pass
+
+###########################3
 
 def add_rlhf_training_args(parser):
     return parser    
@@ -159,6 +259,7 @@ def parse_args():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     add_training_args(parser)
+    add_sac_auto_args(parser)
 
     arguments = parser.parse_args()
     return arguments
@@ -166,13 +267,20 @@ def parse_args():
 def main():
     args = parse_args()
     
-    # Create a Comet experiment
-    experiment = CometExperiment(
-        project_name=args.experiment,
-        workspace=args.workspace, parse_args=False,
-        auto_metric_logging=False,
-        disabled=not args.use_comet
-    )
+    offline = args.comet_offline_dir is not None
+
+    # Create comet-ml experiment
+    if offline:
+        experiment = CometOfflineExperiment(project_name=args.experiment,
+                                    workspace=args.workspace, parse_args=False,
+                                    auto_metric_logging=False,
+                                    disabled=not args.use_comet,
+                                    offline_directory=args.comet_offline_dir)
+    else:
+        experiment = CometExperiment(project_name=args.experiment,
+                                    workspace=args.workspace, parse_args=False,
+                                    auto_metric_logging=False,
+                                    disabled=not args.use_comet)
 
     # Create and run the experiment
     rlhf_experiment = RlhfTrackToLearnTraining(

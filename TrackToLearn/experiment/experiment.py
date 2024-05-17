@@ -259,7 +259,8 @@ class Experiment(object):
         subject_id: str,
         affine: np.ndarray,
         reference: nib.Nifti1Image,
-        path_prefix: str = ''
+        save_dir: str = None,
+        extension: str = 'trk'
     ) -> str:
         """
         Saves a non-stateful tractogram from the training/validation
@@ -276,12 +277,14 @@ class Experiment(object):
             Filename of the saved tractogram.
         """
 
+        # Save on the experiment path, or on a specific directory if provided.
+        path_prefix = save_dir if save_dir else self.experiment_path
+        
         # Save tractogram so it can be looked at, used by the tractometer
         # and more
         filename = pjoin(
             path_prefix,
-            self.experiment_path,
-            "tractogram_{}_{}_{}.trk".format(self.experiment, self.name, subject_id))
+            "tractogram_{}_{}_{}.{}".format(self.experiment, self.name, subject_id, extension))
 
         # Prune empty streamlines, keep only streamlines that have more
         # than the seed.
