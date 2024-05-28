@@ -12,21 +12,27 @@ EXPDIR=$SLURM_TMPDIR/experiments
 LOGSDIR=$SLURM_TMPDIR/logs
 
 # Prepare virtualenv
-source ~/ENV-TTL/bin/activate # Ideally, we would build the environnement within the node itself, but too much dependencies for now.
+echo "Sourcing ENV-TTL-2 virtual environment..."
+source ~/ENV-TTL-2/bin/activate # Ideally, we would build the environnement within the node itself, but too much dependencies for now.
 
 # Prepare datasets
 mkdir $DATADIR
 mkdir $EXPDIR
-tar ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015/ismrm_ttl_dataset.tar $DATADIR
-cp ~/projects/def-pmjodoin/levj1404/oracles/ismrm2015_new_oracle_step075.ckpt $DATADIR
+
+echo "Unpacking datasets..."
+tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015/ismrm_ttl_dataset.tar -C $DATADIR
+
+echo "Copying oracle checkpoint..."
+cp ~/projects/def-pmjodoin/levj1404/oracles/ismrm_paper_oracle.ckpt $DATADIR
 
 # Parameters
-EXPNAME="ISMRM-TractOracleRL-NewOracle-Step075"
-EXPID="Step075-Oracle"
-MAXEP=2
+EXPNAME="ISMRM-TractOracleRL-OraclePaper"
+EXPID="OraclePaper"
+MAXEP=10
 BATCHSIZE=4096
 SEED=1111
-ORACLECHECKPOINT=$DATADIR/ismrm2015_new_oracle_step075.ckpt
+ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
+NPV=4
 
 # Start training
 python $SOURCEDIR/TrackToLearn/trainers/sac_auto_train.py \
@@ -34,7 +40,7 @@ python $SOURCEDIR/TrackToLearn/trainers/sac_auto_train.py \
     "$EXPNAME" \
     "$EXPID" \
     "$DATADIR/ismrm2015.hdf5" \
-    --max_ep 50 \
+    --max_ep $MAXEP \
     --oracle_checkpoint $ORACLECHECKPOINT \
     --oracle_validator \
     --oracle_stopping_criterion \
@@ -47,7 +53,7 @@ python $SOURCEDIR/TrackToLearn/trainers/sac_auto_train.py \
     --workspace "mrzarfir" \
     --rng_seed $SEED \
     --n_actor 4096 \
-    --npv 1 \
+    --npv ${NPV} \
     --min_length 20 \
     --max_length 200 \
     --noise 0.0 \
@@ -55,4 +61,9 @@ python $SOURCEDIR/TrackToLearn/trainers/sac_auto_train.py \
     --replay_size 1000000
 
 # Archive and save everything
-tar -cvf ~/scratch/${EXPNAME}$(date +"%F").tar $EXPDIR $LOGSDIR
+OUTNAME=${EXPNAME}$(date +"%F").tar
+
+echo "Archiving experiment..."
+tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR $LOGSDIR
+echo "Copying archive to scratch..."
+cp ${DATADIR}/${OUTNAME} ~/scratch/${OUTNAME}
