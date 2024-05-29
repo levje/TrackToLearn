@@ -14,6 +14,7 @@ from dipy.io.utils import get_reference_info, create_tractogram_header
 from nibabel.streamlines import detect_format
 from scilpy.io.utils import (add_overwrite_arg,
                              add_sh_basis_args,
+                             parse_sh_basis_arg,
                              assert_inputs_exist, assert_outputs_exist,
                              verify_compression_th)
 from scilpy.tracking.utils import verify_streamline_length_options
@@ -70,7 +71,7 @@ class TrackToLearnTrack(Experiment):
         self.max_length = track_dto['max_length']
 
         self.compress = track_dto['compress'] or 0.0
-        self.sh_basis = track_dto['sh_basis']
+        (self.sh_basis, self.is_sh_basis_legacy) = parse_sh_basis_arg(argparse.Namespace(**track_dto))
         self.save_seeds = track_dto['save_seeds']
 
         # Tractometer parameters

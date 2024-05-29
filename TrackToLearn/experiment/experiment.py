@@ -192,6 +192,7 @@ class Experiment(object):
             'in_seed': self.in_seed,
             'in_mask': self.in_mask,
             'sh_basis': self.sh_basis,
+            'is_sh_basis_legacy': self.is_sh_basis_legacy,
             'input_wm': self.input_wm,
             'reference': self.reference_file,
             # file instead of being passed directly.

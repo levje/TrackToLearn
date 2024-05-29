@@ -330,6 +330,7 @@ class BaseEnv(object):
         in_seed = env_dto['in_seed']
         in_mask = env_dto['in_mask']
         sh_basis = env_dto['sh_basis']
+        is_sh_basis_legacy = env_dto['is_sh_basis_legacy']
         reference = env_dto['reference']
         target_sh_order = env_dto['target_sh_order']
 
@@ -339,6 +340,7 @@ class BaseEnv(object):
                 in_seed,
                 in_mask,
                 sh_basis,
+                is_sh_basis_legacy,
                 target_sh_order)
 
         subj_files = (input_volume, tracking_mask, seeding_mask,
@@ -353,6 +355,7 @@ class BaseEnv(object):
         in_seed,
         in_mask,
         sh_basis,
+        is_sh_basis_legacy,
         target_sh_order=6,
     ):
         """ Load data volumes and masks from files. This is useful for
@@ -412,7 +415,7 @@ class BaseEnv(object):
         sphere = HemiSphere.from_sphere(get_sphere("repulsion724")
                                         ).subdivide(0)
 
-        b_matrix, _ = sh_to_sf_matrix(sphere, find_order_from_nb_coeff(data), "descoteaux07")
+        b_matrix, _ = sh_to_sf_matrix(sphere, find_order_from_nb_coeff(data), "descoteaux07", legacy=is_sh_basis_legacy)
 
         for idx in np.argwhere(np.sum(data, axis=-1)):
             idx = tuple(idx)
