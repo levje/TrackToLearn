@@ -22,6 +22,7 @@ from TrackToLearn.experiment.oracle_validator import OracleValidator
 from TrackToLearn.experiment.tractometer_validator import TractometerValidator
 from TrackToLearn.experiment.experiment import Experiment
 from TrackToLearn.tracking.tracker import Tracker
+from TrackToLearn.utils.torch_utils import get_device, assert_accelerator
 
 
 class TrackToLearnTraining(Experiment):
@@ -100,8 +101,8 @@ class TrackToLearnTraining(Experiment):
         self.comet_experiment = comet_experiment
         self.last_episode = 0
 
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        self.device = get_device()
+        
 
         self.use_comet = train_dto['use_comet']
 
@@ -380,8 +381,8 @@ class TrackToLearnTraining(Experiment):
         training loop
         """
 
-        assert torch.cuda.is_available(), \
-            "Training is only supported on CUDA devices."
+        assert_accelerator(), \
+            "Training is only supported with hardware accelerated devices."
 
         # Instantiate environment. Actions will be fed to it and new
         # states will be returned. The environment updates the streamline
