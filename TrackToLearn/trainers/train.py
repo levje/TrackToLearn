@@ -43,6 +43,7 @@ class TrackToLearnTraining(Experiment):
             Put into a dictionnary to prevent parameter errors if modified.
         """
         # TODO: Find a better way to pass parameters around
+        self.target_sh_order = train_dto['target_sh_order']
 
         # Experiment parameters
         self.experiment_path = train_dto['path']
@@ -98,6 +99,7 @@ class TrackToLearnTraining(Experiment):
         self.fa_map = None
 
         # Various parameters
+        comet_experiment.set_name(train_dto['id'])
         self.comet_experiment = comet_experiment
         self.last_episode = 0
 

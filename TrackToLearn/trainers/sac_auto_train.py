@@ -116,6 +116,8 @@ def main():
                                     auto_metric_logging=False,
                                     disabled=not args.use_comet)
 
+    experiment.set_name(args.id)
+
     # Create and run experiment
     sac_auto_experiment = SACAutoTrackToLearnTraining(
         # Dataset params

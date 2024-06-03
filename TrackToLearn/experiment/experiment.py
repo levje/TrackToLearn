@@ -398,11 +398,12 @@ def add_experiment_args(parser: ArgumentParser):
     parser.add_argument('--use_comet', action='store_true',
                         help='Use comet to display training or not')
     parser.add_argument('--comet_offline_dir', type=str, help='Comet offline directory. If enabled, logs will be saved to this directory and the experiment will be ran offline.')
-
+    
 
 def add_data_args(parser: ArgumentParser):
     parser.add_argument('dataset_file',
                         help='Path to preprocessed dataset file (.hdf5)')
+    parser.add_argument('--target_sh_order', type=int, default=None)
 
 
 def add_environment_args(parser: ArgumentParser):
