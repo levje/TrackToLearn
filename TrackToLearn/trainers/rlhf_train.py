@@ -60,6 +60,8 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             comet_experiment,
         )
 
+        self.agent_checkpoint_dir = rlhf_train_dto.get('agent_checkpoint', None)
+
     def run(self):
         """ Prepare the environment, algorithm and trackers and run the
         training loop
@@ -87,8 +89,16 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
                 The validation tracking environment (forward).
             """
 
-        # Start by pretraining the RL agent to get reasonable results.
-        # super().rl_train(alg, env, valid_env)
+        
+        if self.agent_checkpoint_dir is None:
+            # Start by pretraining the RL agent to get reasonable results.
+            # super().rl_train(alg, env, valid_env)
+            pass
+        else:
+            # The agent is already pretrained, just need to fine-tune it.
+            print("Skipping pretraining procedure: loading agent from checkpoint...", end="")
+            alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+            print("Done.")
 
         self.tracker_env = self.get_valid_env()
         self.tracker = Tracker(
@@ -103,7 +113,6 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         # RLHF loop to fine-tune the oracle to the RL agent and vice-versa.
         num_iters = 5
         for i in range(num_iters):
-
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Generate a tractogram
                 tractograms_path = os.path.join(tmpdir, "tractograms")
@@ -247,9 +256,14 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
     def train_reward(self, dataset_file: str):
         pass
 
-###########################3
+############################
 
-def add_rlhf_training_args(parser):
+def add_rlhf_training_args(parser: argparse.ArgumentParser):
+    parser.add_argument_group("RLHF Training Arguments")
+    parser.add_argument('--agent_checkpoint', type=str,
+                             help='Path to the folder containing .pth files.\n'
+                             'This avoids retraining the agent from scratch \n'
+                             'and allows to directly fine-tune it.')
     return parser    
 
 def parse_args():
