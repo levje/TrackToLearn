@@ -14,6 +14,7 @@ from dipy.io.utils import get_reference_info, create_tractogram_header
 from nibabel.streamlines import detect_format
 from scilpy.io.utils import (add_overwrite_arg,
                              add_sh_basis_args,
+                             parse_sh_basis_arg,
                              assert_inputs_exist, assert_outputs_exist,
                              verify_compression_th)
 from scilpy.tracking.utils import verify_streamline_length_options
@@ -23,6 +24,7 @@ from TrackToLearn.datasets.utils import MRIDataVolume
 
 from TrackToLearn.experiment.experiment import Experiment
 from TrackToLearn.tracking.tracker import Tracker
+from TrackToLearn.utils.torch_utils import get_device
 
 # Define the example model paths from the install folder.
 # Hackish ? I'm not aware of a better solution but I'm
@@ -69,7 +71,7 @@ class TrackToLearnTrack(Experiment):
         self.max_length = track_dto['max_length']
 
         self.compress = track_dto['compress'] or 0.0
-        self.sh_basis = track_dto['sh_basis']
+        (self.sh_basis, self.is_sh_basis_legacy) = parse_sh_basis_arg(argparse.Namespace(**track_dto))
         self.save_seeds = track_dto['save_seeds']
 
         # Tractometer parameters
@@ -79,9 +81,7 @@ class TrackToLearnTrack(Experiment):
         self.compute_reward = False
         self.render = False
 
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available()
-            else "cpu")
+        self.device = get_device()
 
         self.fa_map = None
         if 'fa_map_file' in track_dto:

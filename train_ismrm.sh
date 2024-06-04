@@ -11,7 +11,7 @@ python TrackToLearn/trainers/sac_auto_train.py \
     --oracle_stopping_criterion \
     --oracle_bonus 10.0 \
     --scoring_data "data/datasets/ismrm2015/scoring_data" \
-    --tractometer_reference "data/datasets/ismrm2015/masks/ismrm2015_mask_wm.nii.gz" \
+    --tractometer_reference "data/datasets/ismrm2015/anat/ismrm2015_T1.nii.gz" \
     --tractometer_validator \
     --use_comet \
     --workspace "mrzarfir" \
@@ -22,4 +22,5 @@ python TrackToLearn/trainers/sac_auto_train.py \
     --max_length 200 \
     --noise 0.0 \
     --batch_size 4096 \
-    --replay_size 1000000
+    --replay_size 1000000 \
+    --lr 0.0005 
