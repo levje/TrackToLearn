@@ -112,7 +112,8 @@ class TransformerOracle(L.LightningModule):
         }
 
     def forward(self, x):
-
+        if len(x.shape) > 3:
+            x = x.squeeze(0)
         N, L, D = x.shape  # Batch size, length of sequence, nb. of dims
         cls_tokens = self.cls_token.repeat(N, 1, 1)
         x = torch.cat((cls_tokens, x), dim=1)
@@ -151,6 +152,9 @@ class TransformerOracle(L.LightningModule):
     
     def training_step(self, train_batch, batch_idx):
         x, y = train_batch
+
+        if len(x.shape) > 3:
+            x, y = x.squeeze(0), y.squeeze(0)
 
         y_hat = self(x)
         loss = self.loss(y_hat, y)
@@ -205,7 +209,7 @@ class TransformerOracle(L.LightningModule):
         self.log('test_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
         self.log('test_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
         self.log('test_f1',        self.f1(y_hat, y), on_step=True, on_epoch=False)
-        self.roc.update(y_hat, y)
+        self.roc.update(y_hat, y_int.int())
 
     def on_test_epoch_end(self):
         # TODO: Not implemented.
