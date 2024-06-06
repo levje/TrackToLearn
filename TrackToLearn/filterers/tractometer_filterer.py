@@ -72,7 +72,7 @@ class TractometerFilterer(Filterer):
                 self.list_rois, args)
             
             scored_tractogram = self._merge_with_scores(vb_sft_list, nc_sft, filtered_path)
-            # save_tractogram(scored_tractogram, filtered_path) # Replace saving with directly putting that data into a hdf5 file.
+            save_tractogram(scored_tractogram, filtered_path) # Replace saving with directly putting that data into a hdf5 file.
 
         return scored_tractogram
 

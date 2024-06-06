@@ -1,31 +1,28 @@
+import os
+import argparse
+import lightning.pytorch
+import lightning.pytorch.trainer
+import numpy as np
+import tempfile
+import h5py
+import lightning
+
 from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
-import argparse
+from dipy.io.stateful_tractogram import StatefulTractogram
+from dipy.tracking.streamline import set_number_of_points
+
 from TrackToLearn.trainers.sac_auto_train import SACAutoTrackToLearnTraining, add_sac_auto_args
 from TrackToLearn.trainers.train import add_training_args
 from TrackToLearn.algorithms.rl import RLAlgorithm
 from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.tracking.tracker import Tracker
-from TrackToLearn.experiment.tractometer_validator import TractometerValidator
-from TrackToLearn.experiment.oracle_validator import OracleValidator
-import numpy as np
-from TrackToLearn.algorithms.shared.utils import mean_losses, mean_rewards
-from nibabel.streamlines import TrkFile, TckFile
-from nibabel.streamlines.tractogram import Tractogram
-import torch
-import tempfile
-import os
-from dipy.io.streamline import load_tractogram
 from TrackToLearn.filterers.tractometer_filterer import TractometerFilterer
-from dipy.io.stateful_tractogram import Origin, Space, StatefulTractogram
-from typing import Union
-from dipy.io.streamline import save_tractogram
-from nibabel.streamlines import save
-from dipy.io.utils import get_reference_info, create_tractogram_header
-from typing import List
-import h5py
-from dipy.tracking.streamline import set_number_of_points
+from TrackToLearn.oracles.oracle import OracleSingleton
+from TrackToLearn.trainers.oracle.data_module import StreamlineDataModule
+from TrackToLearn.utils.torch_utils import assert_accelerator, get_device_str
 
+assert_accelerator()
 
 """
 In classic RLHF, the reward network is trained on predictions. Here, we will train the reward network
@@ -61,6 +58,28 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         )
 
         self.agent_checkpoint_dir = rlhf_train_dto.get('agent_checkpoint', None)
+        self.num_workers = rlhf_train_dto['num_workers']
+        self.comet_logger = lightning.pytorch.loggers.CometLogger(
+            save_dir=self.comet_offline_dir,
+            offline=self.comet_offline_dir is not None,
+            project_name="TractOracleRLHF",
+            experiment_name='-'.join([self.experiment, self.name]),
+        )
+        self.lr_monitor = lightning.pytorch.callbacks.LearningRateMonitor(logging_interval='step')
+        self.oracle_max_ep_per_iter = 10
+        self.oracle_next_max_ep = 0 # The value we add to the lightning trainer across different runs.
+        self.oracle_trainer = lightning.pytorch.trainer.Trainer(
+            logger=self.comet_logger,
+            log_every_n_steps=1,
+            num_sanity_val_steps=0,
+            max_epochs=self.oracle_max_ep_per_iter,
+            enable_checkpointing=True,
+            default_root_dir=os.path.join(self.experiment_path, self.experiment, self.name),
+            precision='16-mixed',
+            callbacks=[self.lr_monitor],
+            # accelerator=get_device_str(),
+            # devices=1
+        )
 
     def run(self):
         """ Prepare the environment, algorithm and trackers and run the
@@ -89,17 +108,24 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
                 The validation tracking environment (forward).
             """
 
+        assert self.oracle_checkpoint is not None, "Oracle checkpoint must be provided for RLHF training."
+        assert os.path.exists(self.oracle_checkpoint), "Oracle checkpoint does not exist."
         
         if self.agent_checkpoint_dir is None:
             # Start by pretraining the RL agent to get reasonable results.
-            # super().rl_train(alg, env, valid_env)
-            pass
+            super().rl_train(alg, env, valid_env)
         else:
             # The agent is already pretrained, just need to fine-tune it.
             print("Skipping pretraining procedure: loading agent from checkpoint...", end="")
             alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
             print("Done.")
 
+        # Setup oracle training
+        self.oracle = OracleSingleton(self.oracle_checkpoint,
+                                      device=self.device,
+                                      batch_size=self.batch_size)
+
+        # Setup environment
         self.tracker_env = self.get_valid_env()
         self.tracker = Tracker(
             alg, self.n_actor, prob=1.0, compress=0.0)
@@ -135,6 +161,20 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
 
             # Train the RL agent
             super().rl_train(alg, env, valid_env)
+
+    def train_reward(self, dataset_file: str):
+        """ Train the reward model using the dataset file. """
+        dm = StreamlineDataModule(dataset_file, batch_size=self.batch_size, num_workers=self.num_workers)
+
+        # Not sure if it's the best way to iteratively train the oracle, but
+        # using https://github.com/Lightning-AI/pytorch-lightning/issues/11425
+        # to call fit multiple times.
+        self.oracle_trainer.fit_loop.max_epochs += self.oracle_next_max_ep
+        self.oracle_trainer.fit(self.oracle.model, dm)
+        self.oracle_next_max_ep = self.oracle_max_ep_per_iter
+
+        self.oracle_trainer.test(self.oracle.model, dm)
+
 
     def generate_and_save_tractograms(self, tracker: Tracker, env: BaseEnv, save_dir: str):
         tractogram, _ = tracker.track_and_validate(self.tracker_env) # TODO: Change to only track().
@@ -252,9 +292,7 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
                 indices = indices[sft_nb_streamlines:]
         
         return out_file
-    
-    def train_reward(self, dataset_file: str):
-        pass
+
 
 ############################
 
@@ -264,6 +302,8 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
                              help='Path to the folder containing .pth files.\n'
                              'This avoids retraining the agent from scratch \n'
                              'and allows to directly fine-tune it.')
+    parser.add_argument('--num_workers', type=int, default=20,
+                        help='Number of workers to use for data loading.')
     return parser    
 
 def parse_args():
@@ -274,6 +314,7 @@ def parse_args():
     )
     add_training_args(parser)
     add_sac_auto_args(parser)
+    add_rlhf_training_args(parser)
 
     arguments = parser.parse_args()
     return arguments

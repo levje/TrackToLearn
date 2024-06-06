@@ -397,7 +397,8 @@ def add_experiment_args(parser: ArgumentParser):
                         help='Seed to fix general randomness')
     parser.add_argument('--use_comet', action='store_true',
                         help='Use comet to display training or not')
-    parser.add_argument('--comet_offline_dir', type=str, help='Comet offline directory. If enabled, logs will be saved to this directory and the experiment will be ran offline.')
+    parser.add_argument('--comet_offline_dir', type=str,
+                        help='Comet offline directory. If enabled, logs will be saved to this directory and the experiment will be ran offline.')
     
 
 def add_data_args(parser: ArgumentParser):

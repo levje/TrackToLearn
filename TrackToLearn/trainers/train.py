@@ -104,9 +104,8 @@ class TrackToLearnTraining(Experiment):
         self.last_episode = 0
 
         self.device = get_device()
-        
-
         self.use_comet = train_dto['use_comet']
+        self.comet_offline_dir = train_dto['comet_offline_dir']
 
         # RNG
         torch.manual_seed(self.rng_seed)
