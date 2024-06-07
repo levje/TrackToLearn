@@ -77,8 +77,8 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             default_root_dir=os.path.join(self.experiment_path, self.experiment, self.name),
             precision='16-mixed',
             callbacks=[self.lr_monitor],
-            # accelerator=get_device_str(),
-            # devices=1
+            accelerator=get_device_str(),
+            devices=1
         )
 
     def run(self):

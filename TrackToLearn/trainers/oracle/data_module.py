@@ -43,7 +43,7 @@ class StreamlineDataModule(pl.LightningDataModule):
 
         self.data_loader_kwargs = {
             'num_workers': self.num_workers,
-            'prefetch_factor': 8,
+            'prefetch_factor': 8 if self.num_workers > 0 else None,
             'persistent_workers': False,
             'pin_memory': get_device_str() == 'cuda',
         }
