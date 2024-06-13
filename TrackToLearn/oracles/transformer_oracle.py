@@ -161,13 +161,13 @@ class TransformerOracle(L.LightningModule):
         y_int = torch.round(y)
 
         # Compute & log the metrics
-        self.log('train_loss',      loss, on_step=True, on_epoch=False)
-        self.log('train_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
-        self.log('train_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('train_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('train_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('train_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
-        self.log('train_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
+        self.log('ORACLE_train_loss',      loss, on_step=True, on_epoch=False)
+        self.log('ORACLE_train_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
+        self.log('ORACLE_train_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_train_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_train_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_train_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
+        self.log('ORACLE_train_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
         return loss
 
     def validation_step(self, val_batch, batch_idx):
@@ -181,14 +181,14 @@ class TransformerOracle(L.LightningModule):
         y_int = torch.round(y)
 
         # Compute & log the metrics
-        self.log('val_loss',      loss, on_step=True, on_epoch=False)
-        self.log('val_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
-        self.log('val_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('val_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('val_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('val_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
-        self.log('val_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
-        self.log('val_f1',        self.f1(y_hat, y), on_step=True, on_epoch=False)       
+        self.log('ORACLE_val_loss',      loss, on_step=True, on_epoch=False)
+        self.log('ORACLE_val_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
+        self.log('ORACLE_val_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_val_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_val_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_val_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
+        self.log('ORACLE_val_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
+        self.log('ORACLE_val_f1',        self.f1(y_hat, y), on_step=True, on_epoch=False)       
 
     def test_step(self, test_batch, batch_idx):
         x, y = test_batch
@@ -201,14 +201,14 @@ class TransformerOracle(L.LightningModule):
         y_int = torch.round(y)
 
         # Compute & log the metrics
-        self.log('test_loss',      loss, on_step=True, on_epoch=False)
-        self.log('test_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
-        self.log('test_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('test_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('test_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('test_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
-        self.log('test_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
-        self.log('test_f1',        self.f1(y_hat, y), on_step=True, on_epoch=False)
+        self.log('ORACLE_test_loss',      loss, on_step=True, on_epoch=False)
+        self.log('ORACLE_test_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
+        self.log('ORACLE_test_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_test_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_test_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
+        self.log('ORACLE_test_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
+        self.log('ORACLE_test_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
+        self.log('ORACLE_test_f1',        self.f1(y_hat, y), on_step=True, on_epoch=False)
         self.roc.update(y_hat, y_int.int())
 
     def on_test_epoch_end(self):

@@ -8,17 +8,24 @@
 
 # The above comments are used by SLURM to set the job parameters.
 
+set -e
+
 # Set this to 0 if running on a cluster node.
 islocal=1
 
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="AntoineOracle-Masked-1mm-Dataset"_$(date +"%F-%H_%M_%S")
-MAXEP=10
-BATCHSIZE=4096
+EXPID="5-NoPretrain-AOracle-AccumulatingData-Separable-NPV16"_$(date +"%F-%H_%M_%S")
+RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
+MAXEP=10                # Number of RLHF iterations
+ORACLENBSTEPS=10        # Number of steps for the oracle
+AGENTNBSTEPS=100        # Number of steps for the agent
+PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
+
+NPV=8
 SEEDS=(1111)
-NPV=1
+BATCHSIZE=4096
 GAMMA=0.95
 LR=0.0005
 THETA=30
@@ -32,7 +39,7 @@ if [ $islocal -eq 1 ]; then
     LOGSDIR=data/logs
 
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    RUN_OFFLINE=1
+    RUN_OFFLINE=0
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn
@@ -74,7 +81,6 @@ do
         "${COMETPROJECT}" \
         "${EXPID}" \
         "${DATADIR}/ismrm2015.hdf5" \
-        --max_ep ${MAXEP} \
         --hidden_dims "1024-1024-1024" \
         --oracle_checkpoint ${ORACLECHECKPOINT} \
         --oracle_validator \
@@ -100,10 +106,14 @@ do
         --binary_stopping_threshold 0.1 \
         --n_dirs=100 \
         --alignment_weighting=1.0 \
-	    --agent_checkpoint="data/experiments/TrackToLearnRLHF/AntoineOracle-Masked-1mm-Dataset_2024-06-06-15_46_43/1111/model/" \
+        --max_ep ${MAXEP} \
+        --oracle_train_steps ${ORACLENBSTEPS} \
+        --agent_train_steps ${AGENTNBSTEPS} \
+        --rlhf_inter_npv ${RLHFINTERNPV} \
+        --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
         "${additionnal_args[@]}"
+        # --pretrain_max_ep ${PRETRAINSTEPS} \
 
-    
 done
 
 if [ $islocal -eq 1 ]; then

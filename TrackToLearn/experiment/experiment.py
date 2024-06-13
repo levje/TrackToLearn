@@ -87,7 +87,7 @@ class Experiment(object):
         self.comet_monitor.log_parameters(self.hyperparameters)
 
     def _get_env_dict_and_dto(
-        self, noisy
+        self, noisy, npv=None
     ) -> Tuple[dict, dict]:
         """ Get the environment class and the environment DTO.
 
@@ -113,7 +113,7 @@ class Experiment(object):
             'min_length': self.min_length,
             'max_length': self.max_length,
             'noise': self.noise,
-            'npv': self.npv,
+            'npv': self.npv if npv is None else npv,
             'rng': self.rng,
             'alignment_weighting': self.alignment_weighting,
             'oracle_bonus': self.oracle_bonus,
@@ -156,7 +156,7 @@ class Experiment(object):
 
         return env
 
-    def get_valid_env(self) -> Tuple[BaseEnv, BaseEnv]:
+    def get_valid_env(self, npv = None) -> Tuple[BaseEnv, BaseEnv]:
         """ Build environments
 
         Returns:
@@ -165,7 +165,7 @@ class Experiment(object):
             "Forward" environment only initialized with seeds
         """
 
-        class_dict, env_dto = self._get_env_dict_and_dto(True)
+        class_dict, env_dto = self._get_env_dict_and_dto(True, npv)
 
         # Someone with better knowledge of design patterns could probably
         # clean this

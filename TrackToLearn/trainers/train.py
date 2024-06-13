@@ -50,6 +50,16 @@ class TrackToLearnTraining(Experiment):
         self.experiment = train_dto['experiment']
         self.name = train_dto['id']
 
+        # Directories
+        self.log_dir = os.path.join(self.experiment_path, "logs")
+        self.model_dir = os.path.join(self.experiment_path, "model")
+        self.model_saving_dirs = [self.model_dir]
+
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+
         # RL parameters
         self.max_ep = train_dto['max_ep']
         self.log_interval = train_dto['log_interval']
@@ -107,15 +117,13 @@ class TrackToLearnTraining(Experiment):
         self.use_comet = train_dto['use_comet']
         self.comet_offline_dir = train_dto['comet_offline_dir']
 
+        self.comet_monitor_was_setup = False
+
         # RNG
         torch.manual_seed(self.rng_seed)
         np.random.seed(self.rng_seed)
         self.rng = np.random.RandomState(seed=self.rng_seed)
         random.seed(self.rng_seed)
-
-        directory = pjoin(self.experiment_path, 'model')
-        if not os.path.exists(directory):
-            os.makedirs(directory)
 
         self.hyperparameters = {
             # RL parameters
@@ -160,22 +168,22 @@ class TrackToLearnTraining(Experiment):
                                      'voxel_size': str(self.voxel_size),
                                      'target_sh_order': self.target_sh_order})
 
-        directory = pjoin(self.experiment_path, "model")
-        with open(
-            pjoin(directory, "hyperparameters.json"),
-            'w'
-        ) as json_file:
-            json_file.write(
-                json.dumps(
-                    self.hyperparameters,
-                    indent=4,
-                    separators=(',', ': ')))
+        for saving_dir in self.model_saving_dirs:
+            with open(
+                pjoin(saving_dir, "hyperparameters.json"),
+                'w'
+            ) as json_file:
+                json_file.write(
+                    json.dumps(
+                        self.hyperparameters,
+                        indent=4,
+                        separators=(',', ': ')))
 
-    def save_model(self, alg):
+    def save_model(self, alg, save_model_dir = None):
         """ Save the model state to disk
         """
 
-        directory = pjoin(self.experiment_path, "model")
+        directory = self.default_model_dir if save_model_dir is None else save_model_dir
         if not os.path.exists(directory):
             os.makedirs(directory)
         alg.agent.save(directory, "last_model_state")
@@ -185,6 +193,9 @@ class TrackToLearnTraining(Experiment):
         alg: RLAlgorithm,
         env: BaseEnv,
         valid_env: BaseEnv,
+        max_ep: int = 1000,
+        starting_ep: int = 0,
+        save_model_dir: str = None
     ):
         """ Train the RL algorithm for N epochs. An epoch here corresponds to
         running tracking on the training set until all streamlines are done.
@@ -202,7 +213,8 @@ class TrackToLearnTraining(Experiment):
             """
 
         # Current epoch
-        i_episode = 0
+        i_episode = starting_ep
+        upper_bound = i_episode + max_ep
         # Transition counter
         t = 0
 
@@ -245,14 +257,14 @@ class TrackToLearnTraining(Experiment):
 
             if self.use_comet:
                 self.comet_monitor.log_losses(scores, i_episode)
-        self.save_model(alg)
+        self.save_model(alg, save_model_dir)
 
         # Display the results of the untrained network
         self.log(
             valid_tractogram, valid_reward, i_episode)
 
         # Main training loop
-        while i_episode < self.max_ep:
+        while i_episode < upper_bound:
 
             # Last episode/epoch. Was initially for resuming experiments but
             # since they take so little time I just restart them from scratch
@@ -349,7 +361,7 @@ class TrackToLearnTraining(Experiment):
                     valid_tractogram, valid_reward, i_episode)
                 if self.use_comet:
                     self.comet_monitor.log_losses(scores, i_episode)
-                self.save_model(alg)
+                self.save_model(alg, save_model_dir=save_model_dir)
 
         # End of training, save the model and hyperparameters and track
         valid_env.load_subject()
@@ -375,7 +387,7 @@ class TrackToLearnTraining(Experiment):
         if self.use_comet:
             self.comet_monitor.log_losses(scores, i_episode)
 
-        self.save_model(alg)
+        self.save_model(alg, save_model_dir=save_model_dir)
 
     def run(self):
         """ Prepare the environment, algorithm and trackers and run the
@@ -412,11 +424,12 @@ class TrackToLearnTraining(Experiment):
         self.setup_monitors()
 
         # Setup comet monitors to monitor experiment as it goes along
-        if self.use_comet:
+        if self.use_comet and self.comet_monitor_was_setup:
             self.setup_comet()
+            self.comet_monitor_was_setup = True
 
         # Start training !
-        self.rl_train(alg, env, valid_env)
+        self.rl_train(alg, env, valid_env, self.max_ep)
 
 
 def add_rl_args(parser):

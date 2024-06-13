@@ -1,16 +1,18 @@
 import os
 import argparse
 import lightning.pytorch
+import lightning.pytorch.callbacks
+import lightning.pytorch.loggers
 import lightning.pytorch.trainer
+import lightning.pytorch.utilities
 import numpy as np
 import tempfile
 import h5py
 import lightning
+import comet_ml
 
 from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
-from dipy.io.stateful_tractogram import StatefulTractogram
-from dipy.tracking.streamline import set_number_of_points
 
 from TrackToLearn.trainers.sac_auto_train import SACAutoTrackToLearnTraining, add_sac_auto_args
 from TrackToLearn.trainers.train import add_training_args
@@ -20,6 +22,7 @@ from TrackToLearn.tracking.tracker import Tracker
 from TrackToLearn.filterers.tractometer_filterer import TractometerFilterer
 from TrackToLearn.oracles.oracle import OracleSingleton
 from TrackToLearn.trainers.oracle.data_module import StreamlineDataModule
+from TrackToLearn.trainers.oracle.streamline_dataset_manager import StreamlineDatasetManager
 from TrackToLearn.utils.torch_utils import assert_accelerator, get_device_str
 
 assert_accelerator()
@@ -57,29 +60,59 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             comet_experiment,
         )
 
+        self.pretrain_max_ep = rlhf_train_dto.get('pretrain_max_ep', None)
         self.agent_checkpoint_dir = rlhf_train_dto.get('agent_checkpoint', None)
+
+        # To easily compare the reference model with the trained model after training.
+        self.ref_model_dir = os.path.join(self.experiment_path, "ref_model")
+        self.model_saving_dirs.append(self.ref_model_dir)
+        if not os.path.exists(self.ref_model_dir):
+            os.makedirs(self.ref_model_dir)
+
+        assert self.pretrain_max_ep is not None or self.agent_checkpoint_dir is not None, \
+            "Either pretrain_max_ep or agent_checkpoint must be provided for RLHF training."
+
+        self.oracle_train_steps = rlhf_train_dto['oracle_train_steps']
+        self.agent_train_steps = rlhf_train_dto['agent_train_steps']
         self.num_workers = rlhf_train_dto['num_workers']
+        self.rlhf_inter_npv = rlhf_train_dto['rlhf_inter_npv']
+
+        dataset_to_augment = rlhf_train_dto.get('dataset_to_augment', None)
+        self.dataset_manager = StreamlineDatasetManager(saving_path=self.model_dir,
+                                                        dataset_to_augment_path=dataset_to_augment)
+        
+        comet_ml.config.set_global_experiment(None) # Need this to avoid erasing the RL agent's experiment
+                                                    # when creating a new one.
         self.comet_logger = lightning.pytorch.loggers.CometLogger(
             save_dir=self.comet_offline_dir,
             offline=self.comet_offline_dir is not None,
             project_name="TractOracleRLHF",
             experiment_name='-'.join([self.experiment, self.name]),
         )
+
         self.lr_monitor = lightning.pytorch.callbacks.LearningRateMonitor(logging_interval='step')
-        self.oracle_max_ep_per_iter = 10
-        self.oracle_next_max_ep = 0 # The value we add to the lightning trainer across different runs.
+        self.oracle_next_train_steps = 0 # Since we are leveraging the same trainer, we need to add
+                                         # this value to the oracle trainer across different runs.
+        
+        self.oracle_checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
+            dirpath=self.model_dir,
+        )
         self.oracle_trainer = lightning.pytorch.trainer.Trainer(
             logger=self.comet_logger,
             log_every_n_steps=1,
             num_sanity_val_steps=0,
-            max_epochs=self.oracle_max_ep_per_iter,
+            max_epochs=self.oracle_train_steps,
             enable_checkpointing=True,
-            default_root_dir=os.path.join(self.experiment_path, self.experiment, self.name),
+            default_root_dir=self.experiment_path,
             precision='16-mixed',
-            callbacks=[self.lr_monitor],
+            callbacks=[self.lr_monitor, self.oracle_checkpoint_callback],
             accelerator=get_device_str(),
             devices=1
         )
+
+        self.combined_train_loader = lightning.pytorch.utilities.CombinedLoader([])
+        self.combined_val_loader = lightning.pytorch.utilities.CombinedLoader([])
+        self.combined_test_loader = lightning.pytorch.utilities.CombinedLoader([])
 
     def run(self):
         """ Prepare the environment, algorithm and trackers and run the
@@ -91,7 +124,8 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         self,
         alg: RLAlgorithm,
         env: BaseEnv,
-        valid_env: BaseEnv
+        valid_env: BaseEnv,
+        max_ep: int = 10
     ):
         """ Train the RL algorithm for N epochs. An epoch here corresponds to
         running tracking on the training set until all streamlines are done.
@@ -111,14 +145,25 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         assert self.oracle_checkpoint is not None, "Oracle checkpoint must be provided for RLHF training."
         assert os.path.exists(self.oracle_checkpoint), "Oracle checkpoint does not exist."
         
+        current_ep = 0
+
         if self.agent_checkpoint_dir is None:
             # Start by pretraining the RL agent to get reasonable results.
-            super().rl_train(alg, env, valid_env)
+            super(RlhfTrackToLearnTraining, self).rl_train(alg,
+                             env,
+                             valid_env,
+                             max_ep=self.pretrain_max_ep,
+                             starting_ep=0,
+                             save_model_dir=self.ref_model_dir)
+            current_ep += self.pretrain_max_ep
         else:
             # The agent is already pretrained, just need to fine-tune it.
-            print("Skipping pretraining procedure: loading agent from checkpoint...", end="")
+            print("Skipping pretraining procedure: loading agent from checkpoint...", end=" ")
             alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+            self.save_model(alg, save_model_dir=self.ref_model_dir)
             print("Done.")
+
+        self.comet_monitor.e.add_tag("RLHF-start-ep-{}".format(current_ep))
 
         # Setup oracle training
         self.oracle = OracleSingleton(self.oracle_checkpoint,
@@ -126,7 +171,7 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
                                       batch_size=self.batch_size)
 
         # Setup environment
-        self.tracker_env = self.get_valid_env()
+        self.tracker_env = self.get_valid_env(npv=self.rlhf_inter_npv)
         self.tracker = Tracker(
             alg, self.n_actor, prob=1.0, compress=0.0)
 
@@ -137,8 +182,10 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         ]
 
         # RLHF loop to fine-tune the oracle to the RL agent and vice-versa.
-        num_iters = 5
-        for i in range(num_iters):
+        for i in range(max_ep):
+
+            self.start_finetuning_epoch(i)
+
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Generate a tractogram
                 tractograms_path = os.path.join(tmpdir, "tractograms")
@@ -152,29 +199,51 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
                     os.makedirs(filtered_path)
                 filtered_tractograms = self.filter_tractograms(tractograms, filtered_path) # Need to filter for each filterer and keep the same order.
 
-                # Create HDF5 dataset file
-                dataset_file = os.path.join(tmpdir, "dataset.hdf5")
-                self.create_dataset(filtered_tractograms, dataset_file)
+                self.dataset_manager.add_tractograms_to_dataset(filtered_tractograms)
 
                 # Train reward model
-                self.train_reward(dataset_file)
+                self.train_reward()
 
             # Train the RL agent
-            super().rl_train(alg, env, valid_env)
+            super(RlhfTrackToLearnTraining, self).rl_train(alg,
+                                                           env,
+                                                           valid_env,
+                                                           max_ep=self.agent_train_steps,
+                                                           starting_ep=current_ep,
+                                                           save_model_dir=self.model_dir)
+            current_ep += self.agent_train_steps
 
-    def train_reward(self, dataset_file: str):
+            self.end_finetuning_epoch(i)
+
+    def train_reward(self):
         """ Train the reward model using the dataset file. """
-        dm = StreamlineDataModule(dataset_file, batch_size=self.batch_size, num_workers=self.num_workers)
+        dm = StreamlineDataModule(self.dataset_manager.dataset_file_path, batch_size=self.batch_size, num_workers=self.num_workers)
+
+        dm.setup('fit')
+
+        # TODO: To avoid using weird combination of CombinedLoader, we can also try to wrap
+        # the datamodule to be able to swap it and destroy it dynamically?
+        self.combined_train_loader.flattened = [dm.train_dataloader()]
+        self.combined_val_loader.flattened = [dm.val_dataloader()]
 
         # Not sure if it's the best way to iteratively train the oracle, but
         # using https://github.com/Lightning-AI/pytorch-lightning/issues/11425
         # to call fit multiple times.
-        self.oracle_trainer.fit_loop.max_epochs += self.oracle_next_max_ep
-        self.oracle_trainer.fit(self.oracle.model, dm)
-        self.oracle_next_max_ep = self.oracle_max_ep_per_iter
+        self.oracle_trainer.fit_loop.max_epochs += self.oracle_next_train_steps # On first iteration, we add 0.
+        if hasattr(self, 'experiment_key'):
+            self.comet_logger._experiment_key = self.experiment_key
 
-        self.oracle_trainer.test(self.oracle.model, dm)
+        self.oracle_trainer.fit(self.oracle.model, train_dataloaders=self.combined_train_loader, val_dataloaders=self.combined_val_loader)
+        self.oracle_next_train_steps = self.oracle_train_steps
+        self.experiment_key = self.comet_logger.experiment.get_key()
 
+        dm.setup('test')
+        self.combined_test_loader.flattened = [dm.test_dataloader()]
+        self.oracle_trainer.test(self.oracle.model, dataloaders=self.combined_test_loader)
+
+        self.combined_train_loader.flattened = [[]]
+        self.combined_val_loader.flattened = [[]]
+        self.combined_test_loader.flattened = [[]]
 
     def generate_and_save_tractograms(self, tracker: Tracker, env: BaseEnv, save_dir: str):
         tractogram, _ = tracker.track_and_validate(self.tracker_env) # TODO: Change to only track().
@@ -214,97 +283,43 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             filtered_tractograms.append(filtered_tractogram)
         
         return filtered_tractograms
+    
+    def start_finetuning_epoch(self, epoch: int):
+        print("==================================================")
+        print("======= Starting RLHF finetuning epoch {}/{} =======".format(epoch+1, self.max_ep))
 
-    def _add_streamlines_to_hdf5(self, hdf_subject, sft, nb_points, total, idx):
-        """ Add the streamlines to the hdf5 file.
-
-        TODO: THIS FUNCTION WAS COPIED FROM TRACTORACLE. MIGHT NEED TO BE REFACTORED OR ADAPTED INSTEAD OF COPIED.
-
-        Parameters
-        ----------
-        hdf_subject: h5py.File
-            HDF5 file to save the dataset to.
-        sft: nib.streamlines.tractogram.Tractogram
-            Streamlines to add to the dataset.
-        nb_points: int, optional
-            Number of points to resample the streamlines to
-        total: int
-            Total number of streamlines in the dataset
-        idx: list
-            List of positions to store the streamlines
-        """
-
-        # Get the scores and the streamlines
-        scores = np.asarray(sft.data_per_streamline['score']).squeeze(-1)
-        # Resample the streamlines
-        streamlines = set_number_of_points(sft.streamlines, nb_points)
-        streamlines = np.asarray(streamlines)
-
-        # Create the dataset if it does not exist
-        if 'streamlines' not in hdf_subject:
-            # Create the group
-            streamlines_group = hdf_subject.create_group('streamlines')
-            # Set the number of points
-            streamlines = np.asarray(streamlines)
-            # 'data' will contain the streamlines
-            streamlines_group.create_dataset(
-                'data', shape=(total, nb_points, streamlines.shape[-1]))
-            # 'scores' will contain the scores
-            streamlines_group.create_dataset('scores', shape=(total))
-
-        streamlines_group = hdf_subject['streamlines']
-        data_group = streamlines_group['data']
-        scores_group = streamlines_group['scores']
-
-        for i, st, sc in zip(idx, streamlines, scores):
-            data_group[i] = st
-            scores_group[i] = sc
-
-
-    def create_dataset(self,
-                       filtered_tractograms: list[StatefulTractogram],
-                       out_file: str):
-        """ Gathers all the filtered tractograms and creates a dataset for the reward model training. 
-        Outputs into a hdf5 file."""
-
-        # Compute the total number of streamlines
-        nb_streamlines = sum([len(sft.streamlines) for sft in filtered_tractograms])
-        nb_points = 128
-        assert nb_streamlines > 0, "No streamlines to create the dataset."
-
-        indices = np.arange(nb_streamlines)
-        np.random.shuffle(indices)
-
-        # Add the streamlines to the dataset
-        with h5py.File(out_file, 'w') as f:
-            f.attrs['version'] = 1
-            f.attrs['nb_points'] = nb_points
-            
-            for sft in filtered_tractograms:
-                sft.to_corner()
-                sft.to_vox()
-                sft_nb_streamlines = len(sft.streamlines)
-                ps_indices = np.random.choice(sft_nb_streamlines, sft_nb_streamlines, replace=False)
-                idx = indices[:sft_nb_streamlines]
-
-                self._add_streamlines_to_hdf5(f, sft[ps_indices], nb_points, nb_streamlines, idx)
-
-                indices = indices[sft_nb_streamlines:]
-        
-        return out_file
+    def end_finetuning_epoch(self, epoch: int):
+        print("======= Finished RLHF finetuning epoch {}/{} =======".format(epoch+1, self.max_ep))
+        print("==================================================")
 
 
 ############################
 
 def add_rlhf_training_args(parser: argparse.ArgumentParser):
-    parser.add_argument_group("RLHF Training Arguments")
-    parser.add_argument('--agent_checkpoint', type=str,
-                             help='Path to the folder containing .pth files.\n'
+    rlhf_group = parser.add_argument_group("RLHF Training Arguments")
+
+    agent_group = rlhf_group.add_mutually_exclusive_group(required=True)
+    agent_group.add_argument('--pretrain_max_ep', type=int,
+                        help='Number of epochs for pretraining the RL agent.\n'
+                             'This is done before starting the RLHF pretraining procedure.')
+    agent_group.add_argument('--agent_checkpoint', type=str,
+                        help='Path to the folder containing .pth files.\n'
                              'This avoids retraining the agent from scratch \n'
                              'and allows to directly fine-tune it.')
-    parser.add_argument('--num_workers', type=int, default=20,
+    
+    rlhf_group.add_argument('--oracle_train_steps', type=int, required=True,
+                        help='Number of steps to fine-tune the oracle during RLHF training.')
+    rlhf_group.add_argument('--agent_train_steps', type=int, required=True,
+                        help='Number of steps to fine-tune the agent during RLHF training.')
+    rlhf_group.add_argument('--num_workers', type=int, default=10,
                         help='Number of workers to use for data loading.')
-    return parser    
+    rlhf_group.add_argument("--dataset_to_augment", type=str, help="Path to the dataset to augment.\n"
+                            "If this is not set, the dataset will be created from scratch entirely by the\n"
+                            "current learning agent.")
+    rlhf_group.add_argument("--rlhf_inter_npv", type=int, default=None,
+                            help="Number of seeds to use when generating intermediate tractograms\n"
+                            "for the RLHF training pipeline. If None, the general npv will be used.")
+    return parser
 
 def parse_args():
     """ Train a RL tracking agent using RLHF with PPO. """
@@ -324,7 +339,7 @@ def main():
     
     offline = args.comet_offline_dir is not None
 
-    # Create comet-ml experiment
+    # Create comet-ml experiment for agent training.
     if offline:
         experiment = CometOfflineExperiment(project_name=args.experiment,
                                     workspace=args.workspace, parse_args=False,
