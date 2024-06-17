@@ -289,6 +289,25 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         
         return filtered_tractograms
     
+    def save_hyperparameters(self):
+        """ Add SACAuto-specific hyperparameters to self.hyperparameters
+        then save to file.
+        """
+
+        self.hyperparameters.update(
+            {'algorithm': 'RLHF',
+             'RL_algorithm': 'SACAuto',
+             'ref_model_dir': self.ref_model_dir,
+             'pretrain_max_ep': self.pretrain_max_ep,
+             'agent_checkpoint_dir': self.agent_checkpoint_dir,
+             'oracle_train_steps': self.oracle_train_steps,
+             'agent_train_steps': self.agent_train_steps,
+             'rlhf_inter_npv': self.rlhf_inter_npv,
+             'oracle_training_enabled': self.disable_oracle_training,
+             'dataset_to_augment': self.dataset_manager.dataset_to_augment})
+
+        super().save_hyperparameters()
+
     def start_finetuning_epoch(self, epoch: int):
         print("==================================================")
         print("======= Starting RLHF finetuning epoch {}/{} =======".format(epoch+1, self.max_ep))
