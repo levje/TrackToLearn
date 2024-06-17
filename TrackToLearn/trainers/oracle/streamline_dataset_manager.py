@@ -11,6 +11,7 @@ class StreamlineDatasetManager(object):
     def __init__(self,
                  saving_path: str,
                  dataset_to_augment_path: str = None,
+                 augment_in_place: bool = False,
                  dataset_name: str = DEFAULT_DATASET_NAME,
                  number_of_points: int = 128):
 
@@ -18,8 +19,22 @@ class StreamlineDatasetManager(object):
             raise FileExistsError(f"The saving path {saving_path} does not exist.")
 
         if dataset_to_augment_path is not None:
-            self.dataset_file_path = dataset_to_augment_path
-            self.current_nb_streamlines = self._load_and_verify_streamline_dataset(self.dataset_file_path)
+            self.current_nb_streamlines = self._load_and_verify_streamline_dataset(dataset_to_augment_path)
+
+            if not augment_in_place:
+                # We don't want to modify the original dataset, so we copy it to the saving_path
+                self.dataset_file_path = os.path.join(saving_path, dataset_name)
+
+                # Copy the dataset to the saving path
+                with h5py.File(dataset_to_augment_path, 'r') as original:
+                    with h5py.File(self.dataset_file_path, 'w') as target:
+                        original.copy('streamlines', target)
+                        target.attrs['version'] = original.attrs['version']
+                        target.attrs['nb_points'] = original.attrs['nb_points']
+            else:
+                # Let's just use the original dataset file.
+                self.dataset_file_path = dataset_to_augment_path
+
             self.file_is_created = True
         else:
             self.dataset_file_path = os.path.join(saving_path, dataset_name)
@@ -98,8 +113,6 @@ class StreamlineDatasetManager(object):
 
     def _add_streamlines_to_hdf5(self, data_group, scores_group, sft, nb_points, idx):
         """ Add the streamlines to the hdf5 file.
-
-        TODO: THIS FUNCTION WAS COPIED FROM TRACTORACLE. MIGHT NEED TO BE REFACTORED OR ADAPTED INSTEAD OF COPIED.
 
         Parameters
         ----------
