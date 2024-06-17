@@ -76,6 +76,7 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         self.agent_train_steps = rlhf_train_dto['agent_train_steps']
         self.num_workers = rlhf_train_dto['num_workers']
         self.rlhf_inter_npv = rlhf_train_dto['rlhf_inter_npv']
+        self.disable_oracle_training = rlhf_train_dto.get('disable_oracle_training', False)
 
         dataset_to_augment = rlhf_train_dto.get('dataset_to_augment', None)
         self.dataset_manager = StreamlineDatasetManager(saving_path=self.model_dir,
@@ -186,23 +187,27 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
 
             self.start_finetuning_epoch(i)
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                # Generate a tractogram
-                tractograms_path = os.path.join(tmpdir, "tractograms")
-                if not os.path.exists(tractograms_path):
-                    os.makedirs(tractograms_path)
-                tractograms = self.generate_and_save_tractograms(self.tracker, self.tracker_env, tractograms_path)
+            if self.disable_oracle_training:
+                print("Oracle training is disabled. Only the agent will be trained and the dataset will not be augmented.\n",
+                      "This is equivalent to just training the agent for an additional {} ({} x {}) epochs.".format(self.agent_train_steps*max_ep, max_ep, self.agent_train_steps))
+            else:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    # Generate a tractogram
+                    tractograms_path = os.path.join(tmpdir, "tractograms")
+                    if not os.path.exists(tractograms_path):
+                        os.makedirs(tractograms_path)
+                    tractograms = self.generate_and_save_tractograms(self.tracker, self.tracker_env, tractograms_path)
 
-                # Filter the tractogram
-                filtered_path = os.path.join(tmpdir, "filtered")
-                if not os.path.exists(filtered_path):
-                    os.makedirs(filtered_path)
-                filtered_tractograms = self.filter_tractograms(tractograms, filtered_path) # Need to filter for each filterer and keep the same order.
+                    # Filter the tractogram
+                    filtered_path = os.path.join(tmpdir, "filtered")
+                    if not os.path.exists(filtered_path):
+                        os.makedirs(filtered_path)
+                    filtered_tractograms = self.filter_tractograms(tractograms, filtered_path) # Need to filter for each filterer and keep the same order.
 
-                self.dataset_manager.add_tractograms_to_dataset(filtered_tractograms)
+                    self.dataset_manager.add_tractograms_to_dataset(filtered_tractograms)
 
-                # Train reward model
-                self.train_reward()
+                    # Train reward model
+                    self.train_reward()
 
             # Train the RL agent
             super(RlhfTrackToLearnTraining, self).rl_train(alg,
@@ -319,6 +324,7 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
     rlhf_group.add_argument("--rlhf_inter_npv", type=int, default=None,
                             help="Number of seeds to use when generating intermediate tractograms\n"
                             "for the RLHF training pipeline. If None, the general npv will be used.")
+    rlhf_group.add_argument("--disable_oracle_training", action="store_true",)
     return parser
 
 def parse_args():

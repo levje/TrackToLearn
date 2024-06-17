@@ -1,4 +1,3 @@
-import logging
 import os
 import tempfile
 from collections import namedtuple
@@ -45,7 +44,6 @@ class TractometerFilterer(Filterer):
     def __call__(self, tractogram, out_dir, scored_extension="trk"):
         assert os.path.exists(tractogram), f"Tractogram {tractogram} does not exist."
         filtered_path = os.path.join(out_dir, "scored_{}.{}".format(Path(tractogram).stem, scored_extension))
-        logging.info("Loading tractogram.")
         sft = load_tractogram(tractogram, self.reference,
                             bbox_valid_check=True, trk_header_check=True)
         

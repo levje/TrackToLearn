@@ -424,7 +424,7 @@ class TrackToLearnTraining(Experiment):
         self.setup_monitors()
 
         # Setup comet monitors to monitor experiment as it goes along
-        if self.use_comet and self.comet_monitor_was_setup:
+        if self.use_comet and not self.comet_monitor_was_setup:
             self.setup_comet()
             self.comet_monitor_was_setup = True
 
