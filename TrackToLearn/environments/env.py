@@ -24,6 +24,7 @@ from TrackToLearn.datasets.utils import (MRIDataVolume,
                                          get_sh_order_and_fullness)
 from TrackToLearn.environments.local_reward import PeaksAlignmentReward
 from TrackToLearn.environments.oracle_reward import OracleReward
+from TrackToLearn.environments.tractometer_reward import TractometerReward
 from TrackToLearn.environments.reward import RewardFunction
 from TrackToLearn.environments.stopping_criteria import (
     BinaryStoppingCriterion, OracleStoppingCriterion,
@@ -136,6 +137,7 @@ class BaseEnv(object):
         self.rng = env_dto['rng']
         self.device = env_dto['device']
         self.target_sh_order = env_dto['target_sh_order']
+        self.gt_reward = env_dto['gt_reward']
 
         # Load one subject as an example
         self.load_subject()
@@ -267,16 +269,27 @@ class BaseEnv(object):
         if self.compute_reward:
             # Reward streamline according to alignment with local peaks
             peaks_reward = PeaksAlignmentReward(self.peaks)
-            oracle_reward = OracleReward(self.oracle_checkpoint,
-                                         self.min_nb_steps,
-                                         self.reference,
-                                         self.affine_vox2rasmm,
-                                         self.device)
+            factors = [peaks_reward]
 
+            if not self.gt_reward:
+                # Reward streamlines according to the oracle
+                oracle_reward = OracleReward(self.oracle_checkpoint,
+                                            self.min_nb_steps,
+                                            self.reference,
+                                            self.affine_vox2rasmm,
+                                            self.device)
+                factors.append(oracle_reward)
+            else:
+                tractometer_reward = TractometerReward(self.scoring_data,
+                                                       self.reference,
+                                                       self.min_nb_steps,
+                                                       self.affine_vox2rasmm)
+                factors.append(tractometer_reward)
+            
+            
             # Combine all reward factors into the reward function
             self.reward_function = RewardFunction(
-                [peaks_reward,
-                 oracle_reward],
+                factors,
                 [self.alignment_weighting,
                  self.oracle_bonus])
 

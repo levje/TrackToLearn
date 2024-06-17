@@ -16,7 +16,7 @@ islocal=1
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="7-NoPretrain-NoOracleTraining"_$(date +"%F-%H_%M_%S")
+EXPID="7-NoPretrain-AOracle-NoOracleTraining"_$(date +"%F-%H_%M_%S")
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
 ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -39,11 +39,11 @@ if [ $islocal -eq 1 ]; then
     LOGSDIR=data/logs
 
     # If CONDAENV is not set, PYTHON EXEC should be python, else it should be the python executable of the conda environment.
-    if [ -z "$1" ]; then
+    if [ -z $1 ]; then
         PYTHONEXEC=python
+        echo "WARNING: No conda environment provided. Using the environment loaded when calling the script."
     else
         PYTHONEXEC=~/miniconda3/envs/$1/bin/python
-        echo "WARNING: No conda environment provided. Using the environment loaded when calling the script."
     fi
 
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
@@ -121,6 +121,7 @@ do
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
+        --disable_oracle_training \
         "${additionnal_args[@]}"
         # --pretrain_max_ep ${PRETRAINSTEPS} \
 

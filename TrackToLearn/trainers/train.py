@@ -118,6 +118,7 @@ class TrackToLearnTraining(Experiment):
         self.comet_offline_dir = train_dto['comet_offline_dir']
 
         self.comet_monitor_was_setup = False
+        self.reward_with_gt = train_dto['reward_with_gt']
 
         # RNG
         torch.manual_seed(self.rng_seed)

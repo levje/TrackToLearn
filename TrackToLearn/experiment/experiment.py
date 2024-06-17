@@ -126,6 +126,7 @@ class Experiment(object):
             'compute_reward': self.compute_reward,
             'device': self.device,
             'target_sh_order': self.target_sh_order if hasattr(self, 'target_sh_order') else None,
+            'reward_with_gt': self.reward_with_gt,
         }
 
         if noisy:
@@ -420,6 +421,8 @@ def add_environment_args(parser: ArgumentParser):
 def add_reward_args(parser: ArgumentParser):
     parser.add_argument('--alignment_weighting', default=1, type=float,
                         help='Alignment weighting for reward')
+    parser.add_argument('--reward_with_gt', action='store_true', default=False,
+                        help='Use the ground truth to compute the reward instead of the oracle.')
 
 
 def add_model_args(parser: ArgumentParser):

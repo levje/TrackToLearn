@@ -80,6 +80,7 @@ class TrackToLearnTrack(Experiment):
 
         self.compute_reward = False
         self.render = False
+        self.reward_with_gt = False
 
         self.device = get_device()
 
