@@ -16,7 +16,7 @@ islocal=1
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="7-NoPretrain-AOracle-NoOracleTraining"_$(date +"%F-%H_%M_%S")
+EXPID="8-NoPretrain-AOracle-TractometerReward"_$(date +"%F-%H_%M_%S")
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
 ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -121,8 +121,9 @@ do
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
-        --disable_oracle_training \
+        --reward_with_gt \
         "${additionnal_args[@]}"
+        # --disable_oracle_training \
         # --pretrain_max_ep ${PRETRAINSTEPS} \
 
 done

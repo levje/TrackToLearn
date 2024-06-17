@@ -304,7 +304,7 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
              'agent_train_steps': self.agent_train_steps,
              'rlhf_inter_npv': self.rlhf_inter_npv,
              'oracle_training_enabled': self.disable_oracle_training,
-             'dataset_to_augment': self.dataset_manager.dataset_to_augment})
+             })
 
         super().save_hyperparameters()
 

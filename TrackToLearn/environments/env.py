@@ -137,7 +137,7 @@ class BaseEnv(object):
         self.rng = env_dto['rng']
         self.device = env_dto['device']
         self.target_sh_order = env_dto['target_sh_order']
-        self.gt_reward = env_dto['gt_reward']
+        self.reward_with_gt = env_dto['reward_with_gt']
 
         # Load one subject as an example
         self.load_subject()
@@ -271,7 +271,7 @@ class BaseEnv(object):
             peaks_reward = PeaksAlignmentReward(self.peaks)
             factors = [peaks_reward]
 
-            if not self.gt_reward:
+            if not self.reward_with_gt:
                 # Reward streamlines according to the oracle
                 oracle_reward = OracleReward(self.oracle_checkpoint,
                                             self.min_nb_steps,
