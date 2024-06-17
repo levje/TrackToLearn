@@ -16,7 +16,7 @@ islocal=1
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="5-NoPretrain-AOracle-AccumulatingData-Separable-NPV16"_$(date +"%F-%H_%M_%S")
+EXPID="7-NoPretrain-NoOracleTraining"_$(date +"%F-%H_%M_%S")
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
 ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -38,6 +38,14 @@ if [ $islocal -eq 1 ]; then
     EXPDIR=data/experiments
     LOGSDIR=data/logs
 
+    # If CONDAENV is not set, PYTHON EXEC should be python, else it should be the python executable of the conda environment.
+    if [ -z "$1" ]; then
+        PYTHONEXEC=python
+    else
+        PYTHONEXEC=~/miniconda3/envs/$1/bin/python
+        echo "WARNING: No conda environment provided. Using the environment loaded when calling the script."
+    fi
+
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
     RUN_OFFLINE=0
 else
@@ -47,6 +55,7 @@ else
     DATADIR=$SLURM_TMPDIR/data
     EXPDIR=$SLURM_TMPDIR/experiments
     LOGSDIR=$SLURM_TMPDIR/logs
+    PYTHONEXEC=python
     
     ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
     RUN_OFFLINE=1
@@ -76,40 +85,41 @@ do
     fi
 
     # Start training
-    python -O $SOURCEDIR/TrackToLearn/trainers/rlhf_train.py \
+    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/rlhf_train.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
         "${DATADIR}/ismrm2015.hdf5" \
+        --workspace "mrzarfir" \
         --hidden_dims "1024-1024-1024" \
+        --use_comet \
+        --n_actor 4096 \
+        --min_length 20 \
+        --max_length 200 \
+        --noise 0.0 \
+        --replay_size 1000000 \
+        --alignment_weighting 1.0 \
+        --binary_stopping_threshold 0.1 \
         --oracle_checkpoint ${ORACLECHECKPOINT} \
         --oracle_validator \
         --oracle_stopping_criterion \
         --oracle_bonus 10.0 \
+        --alignment_weighting 1.0 \
         --scoring_data "${DATADIR}/scoring_data" \
         --tractometer_reference "${DATADIR}/scoring_data/t1.nii.gz" \
         --tractometer_validator \
-        --use_comet \
-        --workspace "mrzarfir" \
         --rng_seed ${RNGSEED} \
-        --n_actor 4096 \
         --npv ${NPV} \
-        --min_length 20 \
-        --max_length 200 \
-        --noise 0.0 \
         --batch_size ${BATCHSIZE} \
-        --replay_size 1000000 \
         --lr ${LR} \
         --gamma ${GAMMA} \
         --theta ${THETA} \
-        --alignment_weighting 1.0 \
-        --binary_stopping_threshold 0.1 \
-        --n_dirs=100 \
-        --alignment_weighting=1.0 \
+        --n_dirs 100 \
         --max_ep ${MAXEP} \
         --oracle_train_steps ${ORACLENBSTEPS} \
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
+        --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
         "${additionnal_args[@]}"
         # --pretrain_max_ep ${PRETRAINSTEPS} \
