@@ -1,6 +1,7 @@
 import os
 import tempfile
 import numpy as np
+import time
 from collections import namedtuple
 
 from dipy.io.stateful_tractogram import StatefulTractogram, Space, Tractogram
@@ -66,8 +67,8 @@ class TractometerReward(Reward):
                     self.gt_tails, self.gt_heads, sft, self.bundle_names, self.bundle_lengths,
                     self.angles, self.orientation_lengths, self.abs_orientation_lengths,
                     self.inv_all_masks, self.any_masks, args)
-            
-            idx = np.arange(N)[dones][detected_vs_wpc_ids]
+
+            idx = np.arange(dones.shape[0])[dones][detected_vs_wpc_ids.astype(int)] # NB: .astype(int) is needed whenever the list is empty.
             reward[idx] = 1.0
             return reward
 
@@ -93,6 +94,5 @@ class TractometerReward(Reward):
                 space=Space.RASMM)
             sft.to_vox()
             sft.to_corner()
-
             return self.reward(sft, dones)
         return np.zeros((N))
