@@ -55,7 +55,7 @@ class StreamlineDatasetManager(object):
         nb_new_streamlines = sum([len(sft.streamlines) for sft in filtered_tractograms])
         assert nb_new_streamlines > 0, "No streamlines to add to the dataset."
 
-        indices = np.arange(self.current_nb_streamlines, nb_new_streamlines)
+        indices = np.arange(self.current_nb_streamlines, self.current_nb_streamlines + nb_new_streamlines)
         np.random.shuffle(indices)
 
         write_mode = 'w' if not self.file_is_created else 'a'
