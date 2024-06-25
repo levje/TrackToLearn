@@ -12,6 +12,7 @@ set -e
 
 # Set this to 0 if running on a cluster node.
 islocal=1
+RUN_OFFLINE=0
 
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
@@ -47,10 +48,9 @@ if [ $islocal -eq 1 ]; then
     fi
 
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    RUN_OFFLINE=0
 else
     echo "Running training on a cluster node..."
-    module load python/3.10 cuda cudnn
+    module load python/3.10 cuda cudnn httpproxy
     SOURCEDIR=~/TrackToLearn
     DATADIR=$SLURM_TMPDIR/data
     EXPDIR=$SLURM_TMPDIR/experiments
@@ -58,7 +58,6 @@ else
     PYTHONEXEC=python
     
     ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
-    RUN_OFFLINE=1
 
     # Prepare virtualenv
     echo "Sourcing ENV-TTL-2 virtual environment..."
@@ -119,11 +118,11 @@ do
         --oracle_train_steps ${ORACLENBSTEPS} \
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
-        --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
+        --disable_oracle_training \
+        --reward_with_gt \
         "${additionnal_args[@]}"
-        # --reward_with_gt \
-        # --disable_oracle_training \
+        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         # --pretrain_max_ep ${PRETRAINSTEPS} \
 
 done
