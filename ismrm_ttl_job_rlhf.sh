@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=64000M
-#SBATCH --time=0-40:00:00
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=40000M
+#SBATCH --time=7-00:00:00
 #SBATCH --mail-user=jeremi.levesque@usherbrooke.ca
 #SBATCH --mail-type=ALL
 
@@ -11,13 +11,13 @@
 set -e
 
 # Set this to 0 if running on a cluster node.
-islocal=1
+islocal=0
 RUN_OFFLINE=0
 
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="9-NoPretrain-AOracle-FullDSFix_"_$(date +"%F-%H_%M_%S")
+EXPID="10-TractometerReward_Beluga_"_$(date +"%F-%H_%M_%S")
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
 ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -46,8 +46,9 @@ if [ $islocal -eq 1 ]; then
     else
         PYTHONEXEC=~/miniconda3/envs/$1/bin/python
     fi
-
+    DATASETDIR=$DATADIR
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    AGENTCHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -56,7 +57,8 @@ else
     EXPDIR=$SLURM_TMPDIR/experiments
     LOGSDIR=$SLURM_TMPDIR/logs
     PYTHONEXEC=python
-    
+    export COMET_API_KEY=$(cat ~/.comet_api_key)
+
     ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
 
     # Prepare virtualenv
@@ -68,10 +70,15 @@ else
     mkdir $EXPDIR
 
     echo "Unpacking datasets..."
-    tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015/ismrm_ttl_dataset.tar -C $DATADIR
+    tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
+    DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
     cp ~/projects/def-pmjodoin/levj1404/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    
+    echo "Copying agent checkpoint..."
+    cp ~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/* $DATADIR
+    AGENTCHECKPOINT=~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13
 fi
 
 for RNGSEED in "${SEEDS[@]}"
@@ -82,13 +89,18 @@ do
     if [ $RUN_OFFLINE -eq 1 ]; then
         additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
     fi
+    if [ -n "$AGENTCHECKPOINT" ]; then
+        additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
+    else
+        echo $AGENTCHECKPOINT DOESNT EXIST
+    fi
 
     # Start training
     ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/rlhf_train.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
-        "${DATADIR}/ismrm2015.hdf5" \
+        "${DATASETDIR}/ismrm2015.hdf5" \
         --workspace "mrzarfir" \
         --hidden_dims "1024-1024-1024" \
         --use_comet \
@@ -104,8 +116,8 @@ do
         --oracle_stopping_criterion \
         --oracle_bonus 10.0 \
         --alignment_weighting 1.0 \
-        --scoring_data "${DATADIR}/scoring_data" \
-        --tractometer_reference "${DATADIR}/scoring_data/t1.nii.gz" \
+        --scoring_data "${DATASETDIR}/scoring_data" \
+        --tractometer_reference "${DATASETDIR}/scoring_data/t1.nii.gz" \
         --tractometer_validator \
         --rng_seed ${RNGSEED} \
         --npv ${NPV} \
@@ -118,7 +130,6 @@ do
         --oracle_train_steps ${ORACLENBSTEPS} \
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
-        --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
         --disable_oracle_training \
         --reward_with_gt \
         "${additionnal_args[@]}"
