@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=64000M
-#SBATCH --time=0-40:00:00
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=40000M
+#SBATCH --time=7-00:00:00
 #SBATCH --mail-user=jeremi.levesque@usherbrooke.ca
 #SBATCH --mail-type=ALL
 
@@ -11,13 +11,18 @@
 set -e
 
 # Set this to 0 if running on a cluster node.
-islocal=1
+islocal=0
+RUN_OFFLINE=0
 
 # Expriment parameters
 EXPNAME="TrackToLearnPPO"
 COMETPROJECT="TrackToLearnPPO"
-EXPID="Test_Training_"_$(date +"%F-%H_%M_%S")
-MAXEP=1000                # Number of RLHF iterations
+EXPID="1-PPOAgent_"_$(date +"%F-%H_%M_%S")
+RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
+MAXEP=1000              # Number of PPO iterations
+# ORACLENBSTEPS=10        # Number of steps for the oracle
+# AGENTNBSTEPS=100        # Number of steps for the agent
+# PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
 NPV=8
 SEEDS=(1111)
@@ -41,20 +46,19 @@ if [ $islocal -eq 1 ]; then
     else
         PYTHONEXEC=~/miniconda3/envs/$1/bin/python
     fi
-
+    DATASETDIR=$DATADIR
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    RUN_OFFLINE=0
 else
     echo "Running training on a cluster node..."
-    module load python/3.10 cuda cudnn
+    module load python/3.10 cuda cudnn httpproxy
     SOURCEDIR=~/TrackToLearn
     DATADIR=$SLURM_TMPDIR/data
     EXPDIR=$SLURM_TMPDIR/experiments
     LOGSDIR=$SLURM_TMPDIR/logs
     PYTHONEXEC=python
-    
+    export COMET_API_KEY=$(cat ~/.comet_api_key)
+
     ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
-    RUN_OFFLINE=1
 
     # Prepare virtualenv
     echo "Sourcing ENV-TTL-2 virtual environment..."
@@ -65,7 +69,8 @@ else
     mkdir $EXPDIR
 
     echo "Unpacking datasets..."
-    tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015/ismrm_ttl_dataset.tar -C $DATADIR
+    tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
+    DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
     cp ~/projects/def-pmjodoin/levj1404/oracles/ismrm_paper_oracle.ckpt $DATADIR
@@ -79,13 +84,17 @@ do
     if [ $RUN_OFFLINE -eq 1 ]; then
         additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
     fi
+    if [ -n "$AGENTCHECKPOINT" ]; then
+        additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
+    fi
 
+    # Start training
     # Start training
     ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/ppo_train.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
-        "${DATADIR}/ismrm2015.hdf5" \
+        "${DATASETDIR}/ismrm2015.hdf5" \
         --workspace "mrzarfir" \
         --hidden_dims "1024-1024-1024" \
         --use_comet \
