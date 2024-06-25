@@ -119,6 +119,7 @@ class TrackToLearnTraining(Experiment):
 
         self.comet_monitor_was_setup = False
         self.reward_with_gt = train_dto['reward_with_gt']
+        self.default_model_dir = 'model'
 
         # RNG
         torch.manual_seed(self.rng_seed)
@@ -184,7 +185,7 @@ class TrackToLearnTraining(Experiment):
         """ Save the model state to disk
         """
 
-        directory = self.default_model_dir if save_model_dir is None else save_model_dir
+        directory = self.model_dir if save_model_dir is None else save_model_dir
         if not os.path.exists(directory):
             os.makedirs(directory)
         alg.agent.save(directory, "last_model_state")
