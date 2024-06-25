@@ -109,8 +109,8 @@ do
         --oracle_stopping_criterion \
         --oracle_bonus 10.0 \
         --alignment_weighting 1.0 \
-        --scoring_data "${DATADIR}/scoring_data" \
-        --tractometer_reference "${DATADIR}/scoring_data/t1.nii.gz" \
+        --scoring_data "${DATASETDIR}/scoring_data" \
+        --tractometer_reference "${DATASETDIR}/scoring_data/t1.nii.gz" \
         --tractometer_validator \
         --rng_seed ${RNGSEED} \
         --npv ${NPV} \
