@@ -91,8 +91,6 @@ do
     fi
     if [ -n "$AGENTCHECKPOINT" ]; then
         additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
-    else
-        echo $AGENTCHECKPOINT DOESNT EXIST
     fi
 
     # Start training
