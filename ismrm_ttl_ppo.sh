@@ -2,7 +2,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40000M
-#SBATCH --time=7-00:00:00
+#SBATCH --time=40:00:00
 #SBATCH --mail-user=jeremi.levesque@usherbrooke.ca
 #SBATCH --mail-type=ALL
 
@@ -17,7 +17,7 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnPPO"
 COMETPROJECT="TrackToLearnPPO"
-EXPID="1-PPOAgent_"_$(date +"%F-%H_%M_%S")
+EXPID="2-PPOAgent_FixHParams"_$(date +"%F-%H_%M_%S")
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=1000              # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -28,7 +28,7 @@ NPV=8
 SEEDS=(1111)
 BATCHSIZE=4096
 GAMMA=0.95
-LR=0.0005
+LR=0.00005
 THETA=30
 
 if [ $islocal -eq 1 ]; then
@@ -67,6 +67,7 @@ else
     # Prepare datasets
     mkdir $DATADIR
     mkdir $EXPDIR
+    mkdir $LOGSDIR
 
     echo "Unpacking datasets..."
     tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
@@ -119,6 +120,10 @@ do
         --theta ${THETA} \
         --n_dirs 100 \
         --max_ep ${MAXEP} \
+        --entropy_loss_coeff 0.001 \
+        --lmbda 0.95 \
+        --eps_clip 0.1 \
+        --K_epochs 30 \
         "${additionnal_args[@]}"
 
 done
