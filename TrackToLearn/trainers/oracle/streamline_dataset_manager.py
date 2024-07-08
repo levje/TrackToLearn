@@ -19,6 +19,7 @@ class StreamlineDatasetManager(object):
             raise FileExistsError(f"The saving path {saving_path} does not exist.")
 
         if dataset_to_augment_path is not None:
+            print("Loading the dataset to augment: ", dataset_to_augment_path)
             self.current_nb_streamlines = self._load_and_verify_streamline_dataset(dataset_to_augment_path)
 
             if not augment_in_place:
@@ -37,6 +38,7 @@ class StreamlineDatasetManager(object):
 
             self.file_is_created = True
         else:
+            print("Creating a new dataset.")
             self.dataset_file_path = os.path.join(saving_path, dataset_name)
             self.current_nb_streamlines = 0
             self.file_is_created = False
@@ -101,8 +103,7 @@ class StreamlineDatasetManager(object):
                 ps_indices = np.random.choice(sft_nb_streamlines, sft_nb_streamlines, replace=False)
                 idx = indices[:sft_nb_streamlines]
 
-                self._add_streamlines_to_hdf5(data_group,
-                                              scores_group,
+                self._add_streamlines_to_hdf5(f,
                                               sft[ps_indices],
                                               self.number_of_points,
                                               idx)
@@ -111,7 +112,7 @@ class StreamlineDatasetManager(object):
             
             self.current_nb_streamlines += nb_new_streamlines
 
-    def _add_streamlines_to_hdf5(self, data_group, scores_group, sft, nb_points, idx):
+    def _add_streamlines_to_groups(self, data_group, scores_group, sft, nb_points, idx):
         """ Add the streamlines to the hdf5 file.
 
         Parameters
@@ -138,6 +139,33 @@ class StreamlineDatasetManager(object):
             data_group[i] = st
             scores_group[i] = sc
     
+    def _add_streamlines_to_hdf5(self, f, sft, nb_points, idx):
+        """ Add the streamlines to the hdf5 file.
+
+        Parameters
+        ----------
+        hdf_subject: h5py.File
+            HDF5 file to save the dataset to.
+        sft: nib.streamlines.tractogram.Tractogram
+            Streamlines to add to the dataset.
+        nb_points: int, optional
+            Number of points to resample the streamlines to
+        total: int
+            Total number of streamlines in the dataset
+        idx: list
+            List of positions to store the streamlines
+        """
+
+        # Get the scores and the streamlines
+        scores = np.asarray(sft.data_per_streamline['score']).squeeze(-1)
+        # Resample the streamlines
+        streamlines = set_number_of_points(sft.streamlines, nb_points)
+        streamlines = np.asarray(streamlines)
+
+        for i, st, sc in zip(idx, streamlines, scores):
+            f['streamlines/data'][i] = st
+            f['streamlines/scores'][i] = sc
+
     def _load_and_verify_streamline_dataset(self, dataset_to_augment_path: str):
         """ Verify the dataset in the hdf5 file."""
         with h5py.File(dataset_to_augment_path, 'r') as dataset:

@@ -1,6 +1,5 @@
 import numpy as np
 
-
 class Reward(object):
 
     """ Abstract function that all "rewards" must implement.
@@ -54,6 +53,10 @@ class RewardFunction():
             Streamline coordinates in voxel space
         dones: `numpy.ndarray` of shape (n_streamlines)
             Whether tracking is over for each streamline or not.
+        penalty: float
+            Penalty to apply to the reward. This is useful in the case of RLHF using PPO for example
+            where the reward is modified to penalize with a KL_penalty. This parameter should be the
+            final value of the penalty (positive value = penalize, negative value = increase reward).
 
         Returns
         -------

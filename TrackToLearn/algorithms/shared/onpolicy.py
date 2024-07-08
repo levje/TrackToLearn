@@ -5,10 +5,104 @@ from os.path import join as pjoin
 from torch import nn
 from torch.distributions.normal import Normal
 from typing import Tuple
+import torch.nn.functional as F
 
 from TrackToLearn.algorithms.shared.utils import (
     format_widths, make_fc_network)
 
+class HybridMaxEntropyActor(nn.Module):
+    """ Actor module that takes in a state and outputs an action.
+    Its policy is the neural network layers
+    """
+
+    def __init__(
+        self,
+        state_dim: int,
+        action_dim: int,
+        hidden_layers: list,
+        device: torch.device,
+        action_std: float = 0.0,
+        output_activation=nn.Tanh
+    ):
+        """
+        Parameters:
+        -----------
+            state_dim: int
+                Size of input state
+            action_dim: int
+                Size of output action
+            hidden_dims: str
+                String representing layer widths
+
+        """
+
+        """
+        NB: This is a modified Actor. We want to be able to use PPO with the same actor as SAC.
+        Classically, in PPO, the STD is state-independent, but in SAC, it is state-dependent.
+        We modified the PPO's actor to have a state-dependent STD, as in SAC.
+        """
+        super(HybridMaxEntropyActor, self).__init__()
+
+        self.action_dim = action_dim
+        self.hidden_layers = hidden_layers
+
+        self.output_activation = output_activation()
+
+        self.layers = make_fc_network(
+            self.hidden_layers, state_dim, action_dim * 2)
+
+
+    def forward(
+        self,
+        state: torch.Tensor,
+        probabilistic: float,
+    ) -> torch.Tensor:
+        """ Forward propagation of the actor. Log probability is computed
+        from the Gaussian distribution of the action and correction
+        for the Tanh squashing is applied.
+
+        Parameters:
+        -----------
+        state: torch.Tensor
+            Current state of the environment
+        probabilistic: float
+            Factor to multiply the standard deviation by when sampling.
+            0 means a deterministic policy, 1 means a fully stochastic.
+        """
+
+        LOG_STD_MAX = 2
+        LOG_STD_MIN = -20
+
+        # Compute mean and log_std from neural network. Instead of
+        # have two separate outputs, we have one output of size
+        # action_dim * 2. The first action_dim are the means, and
+        # the last action_dim are the log_stds.
+        p = self.layers(state)
+        mu = p[:, :self.action_dim]
+        log_std = p[:, self.action_dim:]
+        # Constrain log_std inside [LOG_STD_MIN, LOG_STD_MAX]
+        log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
+        # Compute std from log_std
+        std = torch.exp(log_std) * probabilistic
+        # Sample from Gaussian distribution using reparametrization trick
+        pi_distribution = Normal(mu, std, validate_args=False)
+        pi_action = pi_distribution.rsample()
+
+        # Trick from Spinning Up's implementation:
+        # Compute logprob from Gaussian, and then apply correction for Tanh
+        # squashing. NOTE: The correction formula is a little bit magic. To
+        # get an understanding of where it comes from, check out the
+        # original SAC paper (arXiv 1801.01290) and look in appendix C.
+        # This is a more numerically-stable equivalent to Eq 21.
+        logp_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
+        # Squash correction
+        logp_pi -= (2*(np.log(2) - pi_action -
+                       F.softplus(-2*pi_action))).sum(axis=1)
+
+        # Run actions through tanh to get -1, 1 range
+        pi_action = self.output_activation(pi_action)
+        # Return action and logprob
+        return pi_action, logp_pi, pi_distribution.entropy()
 
 class Actor(nn.Module):
     """ Actor module that takes in a state and outputs an action.
@@ -46,11 +140,8 @@ class Actor(nn.Module):
         log_std = -action_std * np.ones(action_dim, dtype=np.float32)
         self.log_std = nn.Parameter(torch.as_tensor(log_std))
 
-    def _mu(self, state: torch.Tensor):
-        return self.layers(state)
-
     def _distribution(self, state: torch.Tensor):
-        mu = self._mu(state)
+        mu = self.layers(state)
         std = torch.exp(self.log_std)
         try:
             dist = Normal(mu, std)
@@ -78,6 +169,7 @@ class PolicyGradient(nn.Module):
         hidden_dims: str,
         device: torch.device,
         action_std: float = 0.0,
+        actor_cls: nn.Module = Actor,
     ):
         super(PolicyGradient, self).__init__()
         self.device = device
@@ -85,26 +177,20 @@ class PolicyGradient(nn.Module):
 
         self.hidden_layers = format_widths(hidden_dims)
 
-        self.actor = Actor(
+        self.actor = actor_cls(
             state_dim, action_dim, self.hidden_layers, action_std,
         ).to(device)
 
     def act(
-        self, state: torch.Tensor, stochastic: bool = True,
+        self, state: torch.Tensor, probabilistic: float = 1.0,
     ) -> torch.Tensor:
         """ Select noisy action according to actor
         """
-        pi = self.actor.forward(state)
-        # Should always be stochastic
-        if stochastic:
-            action = pi.sample()  # if stochastic else pi.mean
-        else:
-            action = pi.mean
-
-        return action
+        action, logprob, entropy = self.actor.forward(state, probabilistic)
+        return action, logprob, entropy
 
     def evaluate(
-        self, state: torch.Tensor, action: torch.Tensor
+        self, state: torch.Tensor, action: torch.Tensor, probabilistic: float
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """ Get output of value function for the actions, as well as
         logprob of actions and entropy of policy for loss
@@ -118,7 +204,7 @@ class PolicyGradient(nn.Module):
         return action_logprob, entropy, mu, std
 
     def select_action(
-        self, state: np.array, probabilistic=True,
+        self, state: np.array, probabilistic: float = 1.0,
     ) -> np.ndarray:
         """ Move state to torch tensor, select action and
         move it back to numpy array
@@ -138,12 +224,12 @@ class PolicyGradient(nn.Module):
             state = state[None, :]
 
         state = torch.as_tensor(state, dtype=torch.float32, device=self.device)
-        action = self.act(state, probabilistic)
+        action, _, _ = self.act(state, probabilistic)
 
         return action
 
     def get_evaluation(
-        self, state: np.array, action: np.array
+        self, state: np.array, action: np.array, probabilistic: float = 1.0
     ) -> Tuple[np.array, np.array, np.array]:
         """ Move state and action to torch tensor,
         get value estimates for states, probabilities of actions
@@ -287,38 +373,35 @@ class ActorCritic(PolicyGradient):
         hidden_dims: str,
         device: torch.device,
         action_std: float = 0.0,
+        actor_cls: nn.Module = Actor
     ):
         super(ActorCritic, self).__init__(
             state_dim,
             action_dim,
             hidden_dims,
             device,
-            action_std
+            action_std,
+            actor_cls
         )
 
         self.critic = Critic(
             state_dim, action_dim, self.hidden_layers,
         ).to(self.device)
 
-        print(self)
-
     def evaluate(
-        self, state: torch.Tensor, action: torch.Tensor
+        self, state: torch.Tensor, action: torch.Tensor, probabilistic: float
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """ Get output of value function for the actions, as well as
         logprob of actions and entropy of policy for loss
         """
 
-        pi = self.actor.forward(state)
-        mu, std = pi.mean, pi.stddev
-        action_logprob = pi.log_prob(action).sum(axis=-1)
-        entropy = pi.entropy()
+        _, logp_pi, entropy = self.actor.forward(state, probabilistic)
         values = self.critic(state).squeeze(-1)
 
-        return values, action_logprob, entropy, mu, std
+        return values, logp_pi, entropy
 
     def get_evaluation(
-        self, state: np.array, action: np.array
+        self, state: np.array, action: np.array, probabilistic: float
     ) -> Tuple[np.array, np.array, np.array]:
         """ Move state and action to torch tensor,
         get value estimates for states, probabilities of actions
@@ -351,14 +434,12 @@ class ActorCritic(PolicyGradient):
         action = torch.as_tensor(
             action, dtype=torch.float32, device=self.device)
 
-        v, prob, entropy, mu, std = self.evaluate(state, action)
+        v, prob, entropy = self.evaluate(state, action, probabilistic)
 
         return (
             v.cpu().data.numpy(),
             prob.cpu().data.numpy(),
-            entropy.cpu().data.numpy(),
-            mu.cpu().data.numpy(),
-            std.cpu().data.numpy())
+            entropy.cpu().data.numpy())
 
     def load_state_dict(self, state_dict):
         """ Load parameters into actor and critic
@@ -416,162 +497,11 @@ class ActorCritic(PolicyGradient):
         self.actor.train()
         self.critic.train()
 
+class PPOActorCritic(ActorCritic):
+    def __init__(self, state_dim: int, action_dim: int, hidden_dims: str, device: torch.device, action_std: float = 0):
+        super().__init__(state_dim, action_dim, hidden_dims, device, action_std, actor_cls=HybridMaxEntropyActor)
 
-class LSTMActorCritic(ActorCritic):
-    """ Actor-Critic module that handles both actions and values
-    Actors and critics here don't share a body but do share a loss
-    function. Therefore they are both in the same module
-    """
-
-    def __init__(
-        self,
-        state_dim: int,
-        action_dim: int,
-        hidden_dims: str,
-        device: torch.device,
-        action_std: float = 0.0,
-    ):
-        nn.Module.__init__(self)
-        self.device = device
-        self.action_dim = action_dim
-
-        self.hidden_layers = format_widths(hidden_dims)
-
-        self.base = nn.Sequential(*[
-            nn.Linear(state_dim, self.hidden_layers[0]),
-            nn.Tanh()])
-
-        self.lstm = nn.LSTMCell(self.hidden_layers[0], self.hidden_layers[1])
-        self.tanh = nn.Tanh()
-
-        self.actor = Actor(
-            self.hidden_layers[1], action_dim, self.hidden_layers[2:],
-            action_std).to(device)
-
-        self.critic = Critic(
-            self.hidden_layers[1], action_dim, self.hidden_layers[2:],
-        ).to(self.device)
-
-        print(self)
-
-    def forward(self, x, h, c):
-        x = self.base(x)
-        h, c = self.lstm(x, (h, c))
-        x = self.tanh(h)
-        return x, h, c
-
-    def reset(self, state):
-
-        N = state.shape[0]
-
-        h = torch.zeros((N, self.hidden_layers[1]), device=self.device)
-        c = torch.zeros((N, self.hidden_layers[1]), device=self.device)
-
-        return h, c
-
-    def select_action(
-        self, state: np.array, h, c, stochastic=True,
-    ) -> np.ndarray:
-        """ Move state to torch tensor, select action and
-        move it back to numpy array
-
-        Parameters:
-        -----------
-            state: np.array
-                State of the environment
-
-        Returns:
-        --------
-            action: np.array
-                Action selected by the policy
-        """
-
-        if len(state.shape) < 2:
-            state = state[None, :]
-
-        state = torch.as_tensor(state, dtype=torch.float32, device=self.device)
-        action, h, c = self.act(state, h, c, stochastic)
-
-        return action.cpu().data.numpy(), h, c
-
-    def act(
-        self, state: torch.Tensor, h, c, stochastic: bool = True,
-    ) -> torch.Tensor:
-        """ Select noisy action according to actor
-        """
-        x, h, c = self(state, h, c)
-
-        pi = self.actor.forward(x)
-        # Should always be stochastic
-        if stochastic:
-            action = pi.sample()  # if stochastic else pi.mean
-        else:
-            action = pi.mean
-
-        return action, h, c
-
-    def evaluate(
-        self,
-        state: torch.Tensor,
-        action: torch.Tensor,
-        h: torch.Tensor,
-        c: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """ Get output of value function for the actions, as well as
-        logprob of actions and entropy of policy for loss
-        """
-        x, h, c = self(state, h, c)
-
-        pi = self.actor(x)
-        mu, std = pi.mean, pi.stddev
-        action_logprob = pi.log_prob(action).sum(axis=-1)
-        entropy = pi.entropy()
-
-        values = self.critic(x).squeeze(-1)
-
-        return values, action_logprob, entropy, mu, std, h, c
-
-    def get_evaluation(
-        self, state: np.array, action: np.array, h, c
-    ) -> Tuple[np.array, np.array, np.array]:
-        """ Move state and action to torch tensor,
-        get value estimates for states, probabilities of actions
-        and entropy for action distribution, then move everything
-        back to numpy array
-
-        Parameters:
-        -----------
-            state: np.array
-                State of the environment
-            action: np.array
-                Actions taken by the policy
-
-        Returns:
-        --------
-            v: np.array
-                Value estimates for state
-            prob: np.array
-                Probabilities of actions
-            entropy: np.array
-                Entropy of policy
-        """
-
-        if len(state.shape) < 2:
-            state = state[None, :]
-        if len(action.shape) < 2:
-            action = action[None, :]
-
-        state = torch.as_tensor(state, dtype=torch.float32, device=self.device)
-        action = torch.as_tensor(
-            action, dtype=torch.float32, device=self.device)
-
-        v, prob, entropy, mu, std, h, c = self.evaluate(state, action, h, c)
-
-        return (
-            v.cpu().data.numpy(),
-            prob.cpu().data.numpy(),
-            entropy.cpu().data.numpy(),
-            mu.cpu().data.numpy(),
-            std.cpu().data.numpy(),
-            h,
-            c)
+    def load_policy(self, path: str, filename: str):
+        self.actor.load_state_dict(
+            torch.load(pjoin(path, filename + '_actor.pth'),
+                       map_location=self.device))

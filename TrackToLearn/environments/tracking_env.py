@@ -134,7 +134,7 @@ class TrackingEnvironment(BaseEnv):
 
     def step(
         self,
-        actions: np.ndarray,
+        actions: np.ndarray
     ) -> Tuple[np.ndarray, list, bool, dict]:
         """
         Apply actions, rescale actions to step size and grow streamlines

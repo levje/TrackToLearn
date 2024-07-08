@@ -17,10 +17,11 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="Profiling-TractometerReward_"_$(date +"%F-%H_%M_%S")
+EXPID="XX-TestPPO-KLPEN-DSAugment_"_$(date +"%F-%H_%M_%S")
+ALG="PPO" #"SACAuto"
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
-ORACLENBSTEPS=10        # Number of steps for the oracle
+ORACLENBSTEPS=5         # Number of steps for the oracle
 AGENTNBSTEPS=100        # Number of steps for the agent
 PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
@@ -28,8 +29,13 @@ NPV=8
 SEEDS=(1111)
 BATCHSIZE=4096
 GAMMA=0.95
-LR=0.0005
+LR=0.00001
 THETA=30
+
+# PPO hparams
+POLICYCLIP=0.2
+VALUECLIP=0.2
+
 
 if [ $islocal -eq 1 ]; then
     # This script should be ran from the root of the project is ran locally.
@@ -48,7 +54,7 @@ if [ $islocal -eq 1 ]; then
     fi
     DATASETDIR=$DATADIR
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    AGENTCHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model
+    AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -89,12 +95,18 @@ do
     if [ $RUN_OFFLINE -eq 1 ]; then
         additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
     fi
+
     if [ -n "$AGENTCHECKPOINT" ]; then
         additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
     fi
 
+    if [ $ALG == "PPO" ]; then
+        additionnal_args+=('--val_clip_coef' "${VALUECLIP}")
+        additionnal_args+=('--eps_clip' "${POLICYCLIP}")
+    fi
+
     # Start training
-    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/rlhf_train.py \
+    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/rlhf_refactored_train.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
@@ -128,11 +140,12 @@ do
         --oracle_train_steps ${ORACLENBSTEPS} \
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
+        --alg ${ALG} \
         --disable_oracle_training \
-        --reward_with_gt \
-        --use_a_tractometer \
         "${additionnal_args[@]}"
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
+        # --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
+        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"
         # --pretrain_max_ep ${PRETRAINSTEPS} \
 
 done

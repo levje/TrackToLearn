@@ -108,6 +108,10 @@ class MaxEntropyActor(Actor):
             Factor to multiply the standard deviation by when sampling.
             0 means a deterministic policy, 1 means a fully stochastic.
         """
+        # DEBUGGING
+        # print("Policy state dict: ", self.state_dict().__str__())
+        # END DEBUGGING
+        
         # Compute mean and log_std from neural network. Instead of
         # have two separate outputs, we have one output of size
         # action_dim * 2. The first action_dim are the means, and

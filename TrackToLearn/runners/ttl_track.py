@@ -81,6 +81,7 @@ class TrackToLearnTrack(Experiment):
         self.compute_reward = False
         self.render = False
         self.reward_with_gt = False
+        self.use_a_tractometer = False
 
         self.device = get_device()
 

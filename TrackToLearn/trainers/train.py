@@ -33,7 +33,7 @@ class TrackToLearnTraining(Experiment):
     def __init__(
         self,
         train_dto: dict,
-        comet_experiment,
+        comet_experiment = None,
     ):
         """
         Parameters
@@ -109,8 +109,9 @@ class TrackToLearnTraining(Experiment):
         self.fa_map = None
 
         # Various parameters
-        comet_experiment.set_name(train_dto['id'])
         self.comet_experiment = comet_experiment
+        if self.comet_experiment is not None:
+            self.comet_experiment.set_name(train_dto['id'])
         self.last_episode = 0
 
         self.device = get_device()
@@ -119,6 +120,7 @@ class TrackToLearnTraining(Experiment):
 
         self.comet_monitor_was_setup = False
         self.reward_with_gt = train_dto['reward_with_gt']
+        self.use_a_tractometer = train_dto['use_a_tractometer']
         self.default_model_dir = 'model'
 
         # RNG
@@ -160,7 +162,7 @@ class TrackToLearnTraining(Experiment):
             'oracle_stopping_criterion': self.oracle_stopping_criterion,
         }
 
-    def save_hyperparameters(self):
+    def save_hyperparameters(self, filename: str = "hyperparameters.json"):
         """ Save hyperparameters to json file
         """
         # Add input and action size to hyperparameters
@@ -172,7 +174,7 @@ class TrackToLearnTraining(Experiment):
 
         for saving_dir in self.model_saving_dirs:
             with open(
-                pjoin(saving_dir, "hyperparameters.json"),
+                pjoin(saving_dir, filename),
                 'w'
             ) as json_file:
                 json_file.write(
@@ -241,29 +243,29 @@ class TrackToLearnTraining(Experiment):
                 self.oracle_checkpoint, self.device))
 
         # Run tracking before training to see what an untrained network does
-        valid_env.load_subject()
-        valid_tractogram, valid_reward = valid_tracker.track_and_validate(
-            valid_env)
-        stopping_stats = self.stopping_stats(valid_tractogram)
-        print(stopping_stats)
-        if valid_tractogram:
-            if self.use_comet:
-                self.comet_monitor.log_losses(stopping_stats, i_episode)
+        # valid_env.load_subject()
+        # valid_tractogram, valid_reward = valid_tracker.track_and_validate(
+        #     valid_env)
+        # stopping_stats = self.stopping_stats(valid_tractogram)
+        # print(stopping_stats)
+        # if valid_tractogram:
+        #     if self.use_comet:
+        #         self.comet_monitor.log_losses(stopping_stats, i_episode)
 
-            filename = self.save_rasmm_tractogram(valid_tractogram,
-                                                  valid_env.subject_id,
-                                                  valid_env.affine_vox2rasmm,
-                                                  valid_env.reference)
-            scores = self.score_tractogram(filename, valid_env)
-            print(scores)
+        #     filename = self.save_rasmm_tractogram(valid_tractogram,
+        #                                           valid_env.subject_id,
+        #                                           valid_env.affine_vox2rasmm,
+        #                                           valid_env.reference)
+        #     scores = self.score_tractogram(filename, valid_env)
+        #     print(scores)
 
-            if self.use_comet:
-                self.comet_monitor.log_losses(scores, i_episode)
-        self.save_model(alg, save_model_dir)
+        #     if self.use_comet:
+        #         self.comet_monitor.log_losses(scores, i_episode)
+        # self.save_model(alg, save_model_dir)
 
-        # Display the results of the untrained network
-        self.log(
-            valid_tractogram, valid_reward, i_episode)
+        # # Display the results of the untrained network
+        # self.log(
+        #     valid_tractogram, valid_reward, i_episode)
 
         # Main training loop
         while i_episode < upper_bound:
@@ -391,34 +393,7 @@ class TrackToLearnTraining(Experiment):
 
         self.save_model(alg, save_model_dir=save_model_dir)
 
-    def run(self):
-        """ Prepare the environment, algorithm and trackers and run the
-        training loop
-        """
-
-        assert_accelerator(), \
-            "Training is only supported with hardware accelerated devices."
-
-        # Instantiate environment. Actions will be fed to it and new
-        # states will be returned. The environment updates the streamline
-        # internally
-        env = self.get_env()
-        valid_env = self.get_valid_env()
-
-        # Get example state to define NN input size
-        self.input_size = env.get_state_size()
-        self.action_size = env.get_action_size()
-
-        # Voxel size
-        self.voxel_size = env.get_voxel_size()
-        # SH Order (used for tracking afterwards)
-        self.target_sh_order = env.target_sh_order
-
-        max_traj_length = env.max_nb_steps
-
-        # The RL training algorithm
-        alg = self.get_alg(max_traj_length)
-
+    def setup_logging(self):
         # Save hyperparameters
         self.save_hyperparameters()
 
@@ -429,6 +404,42 @@ class TrackToLearnTraining(Experiment):
         if self.use_comet and not self.comet_monitor_was_setup:
             self.setup_comet()
             self.comet_monitor_was_setup = True
+
+    def setup_environment_and_info(self):
+        # Instantiate environment. Actions will be fed to it and new
+        # states will be returned. The environment updates the streamline
+        # internally
+        env = self.get_env()
+
+        # Get example state to define NN input size
+        self.input_size = env.get_state_size()
+        self.action_size = env.get_action_size()
+
+        # Voxel size
+        self.voxel_size = env.get_voxel_size()
+        # SH Order (used for tracking afterwards)
+        self.target_sh_order = env.target_sh_order
+        
+        return env
+
+    def run(self):
+        """ Prepare the environment, algorithm and trackers and run the
+        training loop
+        """
+
+        assert_accelerator(), \
+            "Training is only supported with hardware accelerated devices."
+
+        env = self.setup_environment_and_info()
+        valid_env = self.get_valid_env()
+
+
+        max_traj_length = env.max_nb_steps
+
+        # The RL training algorithm
+        alg = self.get_alg(max_traj_length)
+
+        self.setup_logging()
 
         # Start training !
         self.rl_train(alg, env, valid_env, self.max_ep)

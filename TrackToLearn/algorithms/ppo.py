@@ -4,14 +4,54 @@ import torch
 from collections import defaultdict
 from torch import nn
 from typing import Tuple
+from dataclasses import dataclass, field
 
 from TrackToLearn.algorithms.rl import RLAlgorithm
-from TrackToLearn.algorithms.shared.onpolicy import ActorCritic
-from TrackToLearn.algorithms.shared.replay import OnPolicyReplayBuffer
+from TrackToLearn.algorithms.shared.onpolicy import PPOActorCritic
+from TrackToLearn.algorithms.shared.replay import OnPolicyReplayBuffer, RlhfReplayBuffer
 from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.algorithms.shared.utils import (
     add_item_to_means, mean_losses)
 
+
+# KL Controllers based on
+# https://github.com/openai/lm-human-preferences/blob/cbfd210bb8b08f6bc5c26878c10984b90f516c66/lm_human_preferences/train_policy.py#L107
+class FixedKLController:
+    def __init__(self, kl_coef):
+        self.value = kl_coef
+
+    def update(self, current, n_steps):
+        pass
+
+class AdaptiveKLController:
+    def __init__(self, init_kl_coef, target, horizon):
+        self.value = init_kl_coef
+        self.target = target
+        self.horizon = horizon
+
+    def update(self, current, n_steps):
+        target = self.target
+        proportional_error = np.clip(current / target - 1, -0.2, 0.2)
+        mult = 1 + proportional_error * n_steps / self.horizon
+        self.value *= mult
+
+@dataclass
+class PPOHParams(object):
+    algorithm: str = field(repr=True, init=False, default="PPO")
+
+    action_std: float = 0.0
+    lr: float = 1.5e-6
+    gamma: float = 0.99
+    lmbda: float = 0.99
+    K_epochs: int = 80
+    eps_clip: float = 0.2
+    val_clip_coef: float = 0.2
+    entropy_loss_coeff: float = 0.01
+
+    adaptive_kl: bool = False
+    kl_penalty_coeff: float = 0.05
+    kl_target: float = 0.01
+    kl_horizon: int = 1000
 
 # TODO : ADD TYPES AND DESCRIPTION
 class PPO(RLAlgorithm):
@@ -37,13 +77,8 @@ class PPO(RLAlgorithm):
         input_size: int,
         action_size: int,
         hidden_dims: str,
+        hparams: PPOHParams,
         action_std: float = 0.0,
-        lr: float = 3e-4,
-        gamma: float = 0.99,
-        lmbda: float = 0.99,
-        K_epochs: int = 80,
-        eps_clip: float = 0.01,
-        entropy_loss_coeff: float = 0.01,
         max_traj_length: int = 1,
         n_actors: int = 4096,
         rng: np.random.RandomState = None,
@@ -90,30 +125,38 @@ class PPO(RLAlgorithm):
 
         self.input_size = input_size
         self.action_size = action_size
+        self.hparams = hparams
 
-        self.lr = lr
-        self.gamma = gamma
+        self.lr = self.hparams.lr
+        self.gamma = self.hparams.gamma
 
         self.on_policy = True
 
         # Declare policy
-        self.agent = ActorCritic(
+        self.agent = PPOActorCritic(
             input_size, action_size, hidden_dims, device, action_std,
         ).to(device)
 
         # Note the optimizer is ran on the target network's params
         self.optimizer = torch.optim.Adam(
-            self.agent.parameters(), lr=lr)
+            self.agent.parameters(), lr=self.hparams.lr)
 
         # GAE Parameter
-        self.lmbda = lmbda
+        self.lmbda = self.hparams.lmbda
 
         # PPO Specific parameters
         self.max_traj_length = max_traj_length
-        self.K_epochs = K_epochs
-        self.lmbda = lmbda
-        self.eps_clip = eps_clip
-        self.entropy_loss_coeff = entropy_loss_coeff
+        self.K_epochs = self.hparams.K_epochs
+        self.lmbda = self.hparams.lmbda
+        self.eps_clip = self.hparams.eps_clip
+        self.val_clip_coef = self.hparams.val_clip_coef
+        self.entropy_loss_coeff = self.hparams.entropy_loss_coeff
+
+        if self.hparams.adaptive_kl:
+            self.kl_penalty_ctrler = AdaptiveKLController(
+                self.hparams.kl_penalty_coeff, self.hparams.kl_target, self.hparams.kl_horizon)
+        else:
+            self.kl_penalty_ctrler = FixedKLController(self.hparams.kl_penalty_coeff)
 
         self.max_action = 1.
         self.t = 1
@@ -121,7 +164,7 @@ class PPO(RLAlgorithm):
         self.n_actors = n_actors
 
         # Replay buffer
-        self.replay_buffer = OnPolicyReplayBuffer(
+        self.replay_buffer = RlhfReplayBuffer(
             input_size, action_size, n_actors,
             max_traj_length, self.gamma, self.lmbda)
 
@@ -172,8 +215,9 @@ class PPO(RLAlgorithm):
         running_losses = defaultdict(list)
 
         # Sample replay buffer
-        s, a, ret, adv, p, *_ = \
-            replay_buffer.sample()
+        # s, a, r, p, val, next_val, l, nd, *_ = \
+            # replay_buffer.sample()
+        s, a, ret, adv, p, val = replay_buffer.sample()
 
         # PPO allows for multiple gradient steps on the same data
         # TODO: Should be switched with the batch ?
@@ -182,22 +226,43 @@ class PPO(RLAlgorithm):
             for i in range(0, len(s), batch_size):
                 # you can slice further than an array's length
                 j = i + batch_size
+
                 state = torch.FloatTensor(s[i:j]).to(self.device)
                 action = torch.FloatTensor(a[i:j]).to(self.device)
-                returns = torch.FloatTensor(ret[i:j]).to(self.device)
-                advantage = torch.FloatTensor(adv[i:j]).to(self.device)
                 old_prob = torch.FloatTensor(p[i:j]).to(self.device)
+                old_vals = torch.FloatTensor(val[i:j]).to(self.device)
+                old_next_vals = torch.FloatTensor(next_val[i:j]).to(self.device)
 
                 # V_pi'(s) and pi'(a|s)
                 v, logprob, entropy, *_ = self.agent.evaluate(
                     state,
-                    action)
+                    action,
+                    probabilistic=1.0)
+
+                reward = torch.FloatTensor(r[i:j]).to(self.device)
+                lengths = torch.LongTensor(l[i:j]).to(self.device)
+                not_dones = torch.FloatTensor(nd[i:j]).to(self.device)
+                # returns = torch.FloatTensor(ret[i:j]).to(self.device)
+                # advantage = torch.FloatTensor(adv[i:j]).to(self.device)
 
                 # Ratio between probabilities of action according to policy and
                 # target policies
                 assert logprob.size() == old_prob.size(), \
                     '{}, {}'.format(logprob.size(), old_prob.size())
                 ratio = torch.exp(logprob - old_prob)
+                
+                # Apply KL penalty to rewards
+                # TODO: The KL penalty should be only applied to the oracle's reward.
+                # This should be weighted by the oracle weighting factor in the reward function.
+                total_reward = reward - self.kl_penalty_ctrler.value * ratio
+
+
+                # Returns and advantage calculated with KL-penalty for RLHF
+                returns, advantage = self.replay_buffer.compute_adv_rets(total_reward,
+                                                                         lengths,
+                                                                         old_vals,
+                                                                         old_next_vals,
+                                                                         not_dones)
 
                 # Surrogate policy loss
                 assert ratio.size() == advantage.size(), \
@@ -219,8 +284,16 @@ class PPO(RLAlgorithm):
                     surrogate_policy_loss_2)).mean() + \
                     -self.entropy_loss_coeff * entropy.mean()
 
+                # Clip value as in PPO's implementation:
+                # https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/ppo2/model.py#L68-L75
+                # v_clipped = old_vals + torch.clamp(v - old_vals, -self.val_clip_coef, self.val_clip_coef)
+
                 # AC Critic loss
-                critic_loss = ((v - returns) ** 2).mean()
+                critic_loss_unclipped = ((v - returns) ** 2).mean()
+                # critic_loss_clipped = ((v_clipped - returns) ** 2).mean()
+
+                # critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
+                critic_loss = critic_loss_unclipped
 
                 losses = {
                     'actor_loss': actor_loss.item(),
@@ -290,14 +363,16 @@ class PPO(RLAlgorithm):
 
             # Select action according to policy
             # Noise is already added by the policy
-            action = self.agent.select_action(
-                state, probabilistic=True)
+            with torch.no_grad():
+                action = self.agent.select_action(
+                    state, probabilistic=1.0)
 
             self.t += action.shape[0]
 
-            v, prob, _, mu, std = self.agent.get_evaluation(
+            v, prob, _ = self.agent.get_evaluation(
                 state,
-                action)
+                action,
+                probabilistic=1.0)
 
             # Perform action
             next_state, reward, done, info = env.step(action.to(device='cpu', copy=True).numpy())
@@ -306,7 +381,8 @@ class PPO(RLAlgorithm):
 
             vp, *_ = self.agent.get_evaluation(
                 next_state,
-                action)
+                action,
+                probabilistic=1.0)
 
             # Set next state as current state
             running_reward += sum(reward)
@@ -321,9 +397,7 @@ class PPO(RLAlgorithm):
                 done,
                 v,
                 vp,
-                prob,
-                mu,
-                std)
+                prob)
 
             # "Harvesting" here means removing "done" trajectories
             # from state as well as removing the associated streamlines

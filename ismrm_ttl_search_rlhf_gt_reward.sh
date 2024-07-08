@@ -15,9 +15,9 @@ islocal=1
 RUN_OFFLINE=0
 
 # Expriment parameters
-EXPNAME="TrackToLearnRLHF"
-COMETPROJECT="TrackToLearnRLHF"
-EXPID="Profiling-TractometerReward_"_$(date +"%F-%H_%M_%S")
+EXPNAME="TTL-RLHF-TractometerReward-Search"
+COMETPROJECT="TTL-RLHF-TractometerReward-Search"
+EXPID="TractometerReward_Search_"_$(date +"%F-%H_%M_%S")
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
 ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -94,7 +94,7 @@ do
     fi
 
     # Start training
-    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/rlhf_train.py \
+    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/searchers/rlhf_searcher.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
@@ -132,9 +132,6 @@ do
         --reward_with_gt \
         --use_a_tractometer \
         "${additionnal_args[@]}"
-        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
-        # --pretrain_max_ep ${PRETRAINSTEPS} \
-
 done
 
 if [ $islocal -eq 1 ]; then

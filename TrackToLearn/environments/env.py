@@ -25,6 +25,7 @@ from TrackToLearn.datasets.utils import (MRIDataVolume,
 from TrackToLearn.environments.local_reward import PeaksAlignmentReward
 from TrackToLearn.environments.oracle_reward import OracleReward
 from TrackToLearn.environments.tractometer_reward import TractometerReward
+from TrackToLearn.environments.a_tractometer_reward import ATractometerReward
 from TrackToLearn.environments.reward import RewardFunction
 from TrackToLearn.environments.stopping_criteria import (
     BinaryStoppingCriterion, OracleStoppingCriterion,
@@ -138,6 +139,7 @@ class BaseEnv(object):
         self.device = env_dto['device']
         self.target_sh_order = env_dto['target_sh_order']
         self.reward_with_gt = env_dto['reward_with_gt']
+        self.use_a_tractometer = env_dto['use_a_tractometer']
 
         # Load one subject as an example
         self.load_subject()
@@ -280,10 +282,15 @@ class BaseEnv(object):
                                             self.device)
                 factors.append(oracle_reward)
             else:
-                tractometer_reward = TractometerReward(self.scoring_data,
-                                                       self.reference,
-                                                       self.min_nb_steps,
-                                                       self.affine_vox2rasmm)
+                if self.use_a_tractometer:
+                    tractometer_reward = ATractometerReward(self.scoring_data,
+                                                            self.reference,
+                                                            self.affine_vox2rasmm)
+                else:
+                    tractometer_reward = TractometerReward(self.scoring_data,
+                                                           self.reference,
+                                                           self.min_nb_steps,
+                                                           self.affine_vox2rasmm)
                 factors.append(tractometer_reward)
             
             

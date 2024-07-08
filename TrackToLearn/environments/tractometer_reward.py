@@ -9,6 +9,8 @@ from scilpy.segment.tractogram_from_roi import _extract_vb_and_wpc_all_bundles
 
 from TrackToLearn.experiment.tractometer_validator import load_and_verify_everything
 from TrackToLearn.environments.reward import Reward
+import cProfile, pstats, io
+from pstats import SortKey
 
 class TractometerReward(Reward):
 
@@ -36,6 +38,15 @@ class TractometerReward(Reward):
         self.gt_dir = base_dir
         self.dilation_factor = 1
 
+        self.temp = tempfile.mkdtemp()
+        args_mocker = namedtuple('args', [
+            'compute_ic', 'save_wpc_separately', 'unique', 'reference',
+            'bbox_check', 'out_dir', 'dilate_endpoints', 'no_empty'])
+        self.args = args_mocker(
+                False, False, True, self.reference, False, self.temp,
+                self.dilation_factor, False)
+        
+
         # Load
         (self.gt_tails, self.gt_heads, self.bundle_names, self.list_rois,
          self.bundle_lengths, self.angles, self.orientation_lengths,
@@ -47,30 +58,22 @@ class TractometerReward(Reward):
                 self.gt_dir,
                 False)
 
+    def __del__(self):
+        os.rmdir(self.temp)
 
     def reward(self, sft: StatefulTractogram, dones):
 
         reward = np.zeros((dones.shape[0]))
 
-        args_mocker = namedtuple('args', [
-            'compute_ic', 'save_wpc_separately', 'unique', 'reference',
-            'bbox_check', 'out_dir', 'dilate_endpoints', 'no_empty'])
+        _, _, detected_vs_wpc_ids, _ = \
+            _extract_vb_and_wpc_all_bundles(
+                self.gt_tails, self.gt_heads, sft, self.bundle_names, self.bundle_lengths,
+                self.angles, self.orientation_lengths, self.abs_orientation_lengths,
+                self.inv_all_masks, self.any_masks, self.args)
 
-        with tempfile.TemporaryDirectory() as temp:
-            
-            args = args_mocker(
-                False, False, True, self.reference, False, temp,
-                self.dilation_factor, False)
-            
-            _, _, detected_vs_wpc_ids, _ = \
-                _extract_vb_and_wpc_all_bundles(
-                    self.gt_tails, self.gt_heads, sft, self.bundle_names, self.bundle_lengths,
-                    self.angles, self.orientation_lengths, self.abs_orientation_lengths,
-                    self.inv_all_masks, self.any_masks, args)
-
-            idx = np.arange(dones.shape[0])[dones][detected_vs_wpc_ids.astype(int)] # NB: .astype(int) is needed whenever the list is empty.
-            reward[idx] = 1.0
-            return reward
+        idx = np.arange(dones.shape[0])[dones][detected_vs_wpc_ids.astype(int)] # NB: .astype(int) is needed whenever the list is empty.
+        reward[idx] = 1.0
+        return reward
 
 
     def __call__(

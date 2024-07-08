@@ -99,10 +99,11 @@ class TransformerOracle(L.LightningModule):
         self.save_hyperparameters()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer=optimizer, T_max=self.trainer.max_epochs
-        )
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     optimizer=optimizer, T_max=self.trainer.max_epochs
+        # )
+        scheduler = torch.optim.lr_scheduler.LinearLR(optimizer=optimizer, start_factor=1, end_factor=0.1, total_iters=self.trainer.max_epochs)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {

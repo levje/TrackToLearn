@@ -7,7 +7,7 @@ import torch
 from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
 
-from TrackToLearn.algorithms.ppo import PPO
+from TrackToLearn.algorithms.ppo import PPO, PPOHParams
 from TrackToLearn.trainers.train import TrackToLearnTraining, add_training_args
 from TrackToLearn.utils.torch_utils import get_device, assert_accelerator
 
@@ -43,35 +43,46 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
         self.eps_clip = ppo_train_dto['eps_clip']
         self.K_epochs = ppo_train_dto['K_epochs']
         self.entropy_loss_coeff = ppo_train_dto['entropy_loss_coeff']
+        self.val_clip_coef = ppo_train_dto['val_clip_coef']
+        
+        self.adaptive_kl = ppo_train_dto['adaptive_kl']
+        self.kl_penalty_coeff = ppo_train_dto['kl_penalty_coeff']
+        self.kl_target = ppo_train_dto['kl_target']
+        self.kl_horizon = ppo_train_dto['kl_horizon']
 
-    def save_hyperparameters(self):
-        """ Add PPO-specific hyperparameters to self.hyperparameters
-        then save to file.
-        """
-
-        self.hyperparameters.update(
-            {'algorithm': 'PPO',
-             'action_std': self.action_std,
-             'lmbda': self.lmbda,
-             'eps_clip': self.eps_clip,
-             'K_epochs': self.K_epochs,
-             'entropy_loss_coeff': self.entropy_loss_coeff})
-
-        super().save_hyperparameters()
-
-    def get_alg(self, max_nb_steps: int):
-        # The RL training algorithm
-        alg = PPO(
-            self.input_size,
-            self.action_size,
-            self.hidden_dims,
+        self.ppo_hparams = PPOHParams(
             self.action_std,
             self.lr,
             self.gamma,
             self.lmbda,
             self.K_epochs,
             self.eps_clip,
+            self.val_clip_coef,
             self.entropy_loss_coeff,
+            self.adaptive_kl,
+            self.kl_penalty_coeff,
+            self.kl_target,
+            self.kl_horizon
+        )
+
+    def save_hyperparameters(self):
+        """ Add PPO-specific hyperparameters to self.hyperparameters
+        then save to file.
+        """
+
+        self.hyperparameters.update(self.ppo_hparams.__dict__)
+
+        super().save_hyperparameters()
+
+    def get_alg(self, max_nb_steps: int):
+
+        # The RL training algorithm
+        alg = PPO(
+            self.input_size,
+            self.action_size,
+            self.hidden_dims,
+            self.ppo_hparams,
+            self.action_std,
             max_nb_steps,
             self.n_actor,
             self.rng,
@@ -90,6 +101,8 @@ def add_ppo_args(parser):
                         help='Train the model for K epochs')
     parser.add_argument('--eps_clip', default=0.2, type=float,
                         help='Clipping parameter for PPO')
+    parser.add_argument('--val_clip_coef', default=0.2, type=float,
+                        help='Clipping parameter for the value function.')
 
 
 def parse_args():

@@ -127,6 +127,7 @@ class Experiment(object):
             'device': self.device,
             'target_sh_order': self.target_sh_order if hasattr(self, 'target_sh_order') else None,
             'reward_with_gt': self.reward_with_gt,
+            'use_a_tractometer': self.use_a_tractometer,
         }
 
         if noisy:
@@ -170,10 +171,10 @@ class Experiment(object):
 
         # Someone with better knowledge of design patterns could probably
         # clean this
-        env = class_dict['tracking_env'].from_dataset(
+        self.valid_env = class_dict['tracking_env'].from_dataset(
             env_dto, 'training')
 
-        return env
+        return self.valid_env
 
     def get_tracking_env(self):
         """ Generate environments according to tracking parameters.
@@ -423,6 +424,8 @@ def add_reward_args(parser: ArgumentParser):
                         help='Alignment weighting for reward')
     parser.add_argument('--reward_with_gt', action='store_true', default=False,
                         help='Use the ground truth to compute the reward instead of the oracle.')
+    parser.add_argument('--use_a_tractometer', action='store_true', default=False,
+                        help='Use Antoine\'s tractometer to compute the reward.')
 
 
 def add_model_args(parser: ArgumentParser):

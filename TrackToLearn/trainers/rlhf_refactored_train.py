@@ -14,7 +14,8 @@ import comet_ml
 from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
 
-from TrackToLearn.trainers.sac_auto_train import SACAutoTrackToLearnTraining, add_sac_auto_args
+from TrackToLearn.trainers.sac_auto_train import TrackToLearnTraining, add_sac_auto_args, SACAutoTrackToLearnTraining
+from TrackToLearn.trainers.ppo_train import PPOTrackToLearnTraining, add_ppo_args
 from TrackToLearn.trainers.train import add_training_args
 from TrackToLearn.algorithms.rl import RLAlgorithm
 from TrackToLearn.environments.env import BaseEnv
@@ -28,42 +29,24 @@ from TrackToLearn.utils.torch_utils import assert_accelerator, get_device_str
 assert_accelerator()
 
 """
-In classic RLHF, the reward network is trained on predictions. Here, we will train the reward network
-in the loop with the RL agent using filtered tractograms from Extractor. However, if we want to train
-the reward network with multiple filtering algorithms (i.e. Tractometer, COMMIT, Extractor, etc.), we
-could use the following approach to learn with "preference" data:
-    
-    mu(1) = smax(nb of times that streamline was classified as valid in the ensemble of filterers)
-    mu(2) = smax(nb of times that streamline was classified as valid in the ensemble of filterers)
-
-Not sure how slow/fast that would be to train in practice, but that preference distribution could be
-used as a target for the reward network.
-
-N.B: Maybe the "nb of times that streamline was classified can be a weighted sum of all the filtering
-methods (e.g. more weight on Extractor than COMMIT for example)."
-
-N.B: The pair of streamlines for comparison should originate from the same seed.
-
-N.B: Instead of pairs, maybe a ranking system would be better, as it shows better performance in some scenarios
-of the litterature.
+This is adapted from the rlhf_train.py script. The main difference is that
+this class doesn't inherit from SACAuto's trainer. 
 """
 
-class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
+class RlhfRefactored(TrackToLearnTraining):
     
     def __init__(
         self,
         rlhf_train_dto: dict,
-        comet_experiment: CometExperiment,
+        trainer_cls: TrackToLearnTraining
         ):
         super().__init__(
-            rlhf_train_dto,
-            comet_experiment,
+            rlhf_train_dto
         )
 
+        # General RLHF parameters.
         self.pretrain_max_ep = rlhf_train_dto.get('pretrain_max_ep', None)
         self.agent_checkpoint_dir = rlhf_train_dto.get('agent_checkpoint', None)
-
-        # To easily compare the reference model with the trained model after training.
         self.ref_model_dir = os.path.join(self.experiment_path, "ref_model")
         self.model_saving_dirs.append(self.ref_model_dir)
         if not os.path.exists(self.ref_model_dir):
@@ -71,56 +54,99 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
 
         assert self.pretrain_max_ep is not None or self.agent_checkpoint_dir is not None, \
             "Either pretrain_max_ep or agent_checkpoint must be provided for RLHF training."
-
+        
         self.oracle_train_steps = rlhf_train_dto['oracle_train_steps']
         self.agent_train_steps = rlhf_train_dto['agent_train_steps']
         self.num_workers = rlhf_train_dto['num_workers']
         self.rlhf_inter_npv = rlhf_train_dto['rlhf_inter_npv']
         self.disable_oracle_training = rlhf_train_dto.get('disable_oracle_training', False)
+        self.batch_size = rlhf_train_dto['batch_size']
 
-        if not self.disable_oracle_training:
-            dataset_to_augment = rlhf_train_dto.get('dataset_to_augment', None)
-            self.dataset_manager = StreamlineDatasetManager(saving_path=self.model_dir,
-                                                        dataset_to_augment_path=dataset_to_augment)
+        ################################################
+        # Start by initializing the agent trainer.     #
+        offline = rlhf_train_dto['comet_offline_dir'] is not None
+
+        if offline:
+            agent_experiment = CometOfflineExperiment(project_name=self.experiment,
+                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                        auto_metric_logging=False,
+                                        disabled=not self.use_comet,
+                                        offline_directory=self.comet_offline_dir)
+        else:
+            agent_experiment = CometExperiment(project_name=self.experiment,
+                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                        auto_metric_logging=False,
+                                        disabled=not self.use_comet)
+
+        agent_experiment.set_name(self.name)
+        self.agent_trainer = trainer_cls(rlhf_train_dto, agent_experiment)
+        _ = self.agent_trainer.setup_environment_and_info()
+        self.get_alg = self.agent_trainer.get_alg
         
-            comet_ml.config.set_global_experiment(None) # Need this to avoid erasing the RL agent's experiment
+        ################################################
+        # Continue by initializing the oracle trainer. #
+        dataset_to_augment = rlhf_train_dto.get('dataset_to_augment', None)
+        self.dataset_manager = StreamlineDatasetManager(saving_path=self.model_dir,
+                                                        dataset_to_augment_path=dataset_to_augment)
+
+        comet_ml.config.set_global_experiment(None) # Need this to avoid erasing the RL agent's experiment
                                                     # when creating a new one.
-            self.comet_logger = lightning.pytorch.loggers.CometLogger(
-                save_dir=self.comet_offline_dir,
-                offline=self.comet_offline_dir is not None,
-                project_name="TractOracleRLHF",
-                experiment_name='-'.join([self.experiment, self.name]),
-            )
+        
+        self.comet_logger = lightning.pytorch.loggers.CometLogger(
+            save_dir=self.comet_offline_dir,
+            offline=self.comet_offline_dir is not None,
+            project_name="TractOracleRLHF",
+            experiment_name='-'.join([self.experiment, self.name]),
+        )
 
-            self.lr_monitor = lightning.pytorch.callbacks.LearningRateMonitor(logging_interval='step')
-            self.oracle_next_train_steps = 0 # Since we are leveraging the same trainer, we need to add
-                                            # this value to the oracle trainer across different runs.
-            
-            self.oracle_checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
-                dirpath=self.model_dir,
-            )
-            self.oracle_trainer = lightning.pytorch.trainer.Trainer(
-                logger=self.comet_logger,
-                log_every_n_steps=1,
-                num_sanity_val_steps=0,
-                max_epochs=self.oracle_train_steps,
-                enable_checkpointing=True,
-                default_root_dir=self.experiment_path,
-                precision='16-mixed',
-                callbacks=[self.lr_monitor, self.oracle_checkpoint_callback],
-                accelerator=get_device_str(),
-                devices=1
-            )
+        self.lr_monitor = lightning.pytorch.callbacks.LearningRateMonitor(logging_interval='step')
+        self.oracle_next_train_steps = 0 # Since we are leveraging the same trainer, we need to add
+                                         # this value to the oracle trainer across different runs.
+        
+        self.oracle_checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
+            dirpath=self.model_dir,
+        )
+        self.oracle_trainer = lightning.pytorch.trainer.Trainer(
+            logger=self.comet_logger,
+            log_every_n_steps=1,
+            num_sanity_val_steps=0,
+            max_epochs=self.oracle_train_steps,
+            enable_checkpointing=True,
+            default_root_dir=self.experiment_path,
+            precision='16-mixed',
+            callbacks=[self.lr_monitor, self.oracle_checkpoint_callback],
+            accelerator=get_device_str(),
+            devices=1
+        )
 
-            self.combined_train_loader = lightning.pytorch.utilities.CombinedLoader([])
-            self.combined_val_loader = lightning.pytorch.utilities.CombinedLoader([])
-            self.combined_test_loader = lightning.pytorch.utilities.CombinedLoader([])
+        self.combined_train_loader = lightning.pytorch.utilities.CombinedLoader([])
+        self.combined_val_loader = lightning.pytorch.utilities.CombinedLoader([])
+        self.combined_test_loader = lightning.pytorch.utilities.CombinedLoader([])
+
+        # Update the hyperparameters
+        self.hyperparameters.update(
+            {'algorithm': 'RLHF',
+             'RL_algorithm': 'SACAuto',
+             'ref_model_dir': self.ref_model_dir,
+             'pretrain_max_ep': self.pretrain_max_ep,
+             'agent_checkpoint_dir': self.agent_checkpoint_dir,
+             'oracle_train_steps': self.oracle_train_steps,
+             'agent_train_steps': self.agent_train_steps,
+             'rlhf_inter_npv': self.rlhf_inter_npv,
+             'oracle_training_enabled': self.disable_oracle_training,
+             'original_dataset': dataset_to_augment,
+             'augmented_dataset': self.dataset_manager.dataset_file_path,
+             })
+
+    def setup_logging(self):
+        """ Override the setup_logging method to avoid creating a new experiment. """
+        self.save_hyperparameters()
 
     def run(self):
         """ Prepare the environment, algorithm and trackers and run the
         training loop
         """
-        super(RlhfTrackToLearnTraining, self).run()
+        super().run()
 
     def rl_train(
         self,
@@ -143,15 +169,17 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             valid_env: BaseEnv
                 The validation tracking environment (forward).
             """
-
         assert self.oracle_checkpoint is not None, "Oracle checkpoint must be provided for RLHF training."
         assert os.path.exists(self.oracle_checkpoint), "Oracle checkpoint does not exist."
         
         current_ep = 0
 
+        # Setup agent trainer. (needed since we don't call the run method)
+        self.agent_trainer.setup_logging()
+
         if self.agent_checkpoint_dir is None:
             # Start by pretraining the RL agent to get reasonable results.
-            super(RlhfTrackToLearnTraining, self).rl_train(alg,
+            self.agent_trainer.rl_train(alg,
                              env,
                              valid_env,
                              max_ep=self.pretrain_max_ep,
@@ -161,22 +189,28 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         else:
             # The agent is already pretrained, just need to fine-tune it.
             print("Skipping pretraining procedure: loading agent from checkpoint...", end=" ")
-            alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+            if isinstance(self.agent_trainer, PPOTrackToLearnTraining):
+                # This is needed, because PPO doesn't have the same critic as SAC.
+                # This means that we start the PPO training with a randomly initialized critic.
+                alg.agent.load_policy(self.agent_checkpoint_dir, 'last_model_state')
+            else:
+                alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+
             self.save_model(alg, save_model_dir=self.ref_model_dir)
             print("Done.")
 
-        self.comet_monitor.e.add_tag("RLHF-start-ep-{}".format(current_ep))
+        self.agent_trainer.comet_monitor.e.add_tag("RLHF-start-ep-{}".format(current_ep))
 
         # Setup oracle training
         self.oracle = OracleSingleton(self.oracle_checkpoint,
                                       device=self.device,
                                       batch_size=self.batch_size)
-
+        
         # Setup environment
         self.tracker_env = self.get_valid_env(npv=self.rlhf_inter_npv)
         self.tracker = Tracker(
             alg, self.n_actor, prob=1.0, compress=0.0)
-
+        
         # Setup filterers which will be used to filter tractograms
         # for the RLHF pipeline.
         self.filterers = [
@@ -211,17 +245,18 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
                     self.train_reward()
 
             # Train the RL agent
-            super(RlhfTrackToLearnTraining, self).rl_train(alg,
-                                                           env,
-                                                           valid_env,
-                                                           max_ep=self.agent_train_steps,
-                                                           starting_ep=current_ep,
-                                                           save_model_dir=self.model_dir)
+            self.agent_trainer.rl_train(alg,
+                                        env,
+                                        valid_env,
+                                        max_ep=self.agent_train_steps,
+                                        starting_ep=current_ep,
+                                        save_model_dir=self.model_dir)
             current_ep += self.agent_train_steps
 
             self.end_finetuning_epoch(i)
 
     def train_reward(self):
+        """ Train the reward model using the dataset file. """
         """ Train the reward model using the dataset file. """
         dm = StreamlineDataModule(self.dataset_manager.dataset_file_path, batch_size=self.batch_size, num_workers=self.num_workers)
 
@@ -260,26 +295,9 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
             env.reference,
             save_dir,
             extension='tck')
-        
-        # sft = StatefulTractogram(
-        #     tractogram.streamlines,
-        #     env.reference,
-        #     Space.RASMM,
-        #     origin=Origin.TRACKVIS,
-        #     data_per_streamline=tractogram.data_per_streamline,
-        #     data_per_point=tractogram.data_per_point
-        # )
-
-        # filename = "tractogram_{}_{}_{}.tck".format(self.experiment, self.name, env.subject_id)
-        # save_tractogram(sft, os.path.join(save_dir, filename))
-
         return [filename]
 
     def filter_tractograms(self, tractograms: str, out_dir: str):
-        """ Filter the tractogram (0 for invalid, 1 for valid) using the filterers
-
-        TODO: Implement for more than one filterer
-        """
         filterer = self.filterers[0]
 
         filtered_tractograms = []
@@ -291,23 +309,8 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
         return filtered_tractograms
     
     def save_hyperparameters(self):
-        """ Add SACAuto-specific hyperparameters to self.hyperparameters
-        then save to file.
-        """
-
-        self.hyperparameters.update(
-            {'algorithm': 'RLHF',
-             'RL_algorithm': 'SACAuto',
-             'ref_model_dir': self.ref_model_dir,
-             'pretrain_max_ep': self.pretrain_max_ep,
-             'agent_checkpoint_dir': self.agent_checkpoint_dir,
-             'oracle_train_steps': self.oracle_train_steps,
-             'agent_train_steps': self.agent_train_steps,
-             'rlhf_inter_npv': self.rlhf_inter_npv,
-             'oracle_training_enabled': self.disable_oracle_training,
-             })
-
-        super().save_hyperparameters()
+        # self.hyperparameters.update({})
+        super().save_hyperparameters(filename='rlhf_hyperparameters.json')
 
     def start_finetuning_epoch(self, epoch: int):
         print("==================================================")
@@ -322,6 +325,9 @@ class RlhfTrackToLearnTraining(SACAutoTrackToLearnTraining):
 
 def add_rlhf_training_args(parser: argparse.ArgumentParser):
     rlhf_group = parser.add_argument_group("RLHF Training Arguments")
+    rlhf_group.add_argument('--alg', type=str, required=True,
+                        help='The algorithm to use for training the agent.\n'
+                             'Possible values are: SACAuto, PPO.')
 
     agent_group = rlhf_group.add_mutually_exclusive_group(required=True)
     agent_group.add_argument('--pretrain_max_ep', type=int,
@@ -347,6 +353,17 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
     rlhf_group.add_argument("--disable_oracle_training", action="store_true",)
     return parser
 
+def get_trainer_cls_and_args(alg_name: str):
+    trainer_map = {
+        'SACAuto': SACAutoTrackToLearnTraining,
+        'PPO': PPOTrackToLearnTraining,
+    }
+
+    if alg_name not in trainer_map:
+        raise ValueError(f'Invalid algorithm name: {alg_name}')
+
+    return trainer_map[alg_name]
+
 def parse_args():
     """ Train a RL tracking agent using RLHF with PPO. """
     parser = argparse.ArgumentParser(
@@ -355,6 +372,7 @@ def parse_args():
     )
     add_training_args(parser)
     add_sac_auto_args(parser)
+    add_ppo_args(parser)
     add_rlhf_training_args(parser)
 
     arguments = parser.parse_args()
@@ -362,28 +380,13 @@ def parse_args():
 
 def main():
     args = parse_args()
-    
-    offline = args.comet_offline_dir is not None
 
-    # Create comet-ml experiment for agent training.
-    if offline:
-        experiment = CometOfflineExperiment(project_name=args.experiment,
-                                    workspace=args.workspace, parse_args=False,
-                                    auto_metric_logging=False,
-                                    disabled=not args.use_comet,
-                                    offline_directory=args.comet_offline_dir)
-    else:
-        experiment = CometExperiment(project_name=args.experiment,
-                                    workspace=args.workspace, parse_args=False,
-                                    auto_metric_logging=False,
-                                    disabled=not args.use_comet)
-
-    experiment.set_name(args.id)
+    trainer_cls = get_trainer_cls_and_args(args.alg)
 
     # Create and run the experiment
-    rlhf_experiment = RlhfTrackToLearnTraining(
+    rlhf_experiment = RlhfRefactored(
         vars(args),
-        experiment
+        trainer_cls
     )
     rlhf_experiment.run()
 
