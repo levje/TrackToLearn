@@ -51,6 +51,7 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
         self.kl_horizon = ppo_train_dto['kl_horizon']
 
         self.ppo_hparams = PPOHParams(
+            self.oracle_bonus,
             self.action_std,
             self.lr,
             self.gamma,
@@ -95,14 +96,15 @@ def add_ppo_args(parser):
                         help='Entropy bonus coefficient')
     parser.add_argument('--action_std', default=0.0, type=float,
                         help='Standard deviation used of the action')
-    parser.add_argument('--lmbda', default=0.95, type=float,
-                        help='Lambda param for advantage discounting')
-    parser.add_argument('--K_epochs', default=10, type=int,
+    parser.add_argument('--lmbda', default=0.0, type=float,
+                        help='Lambda param for advantage discounting. 0.0 means no discounting, thus adv = R - V(s).')
+    parser.add_argument('--K_epochs', default=5, type=int,
                         help='Train the model for K epochs')
     parser.add_argument('--eps_clip', default=0.2, type=float,
                         help='Clipping parameter for PPO')
     parser.add_argument('--val_clip_coef', default=0.2, type=float,
                         help='Clipping parameter for the value function.')
+    
     parser.add_argument('--adaptive_kl', action='store_true',
                         help='This flag enables the adaptive kl penalty.\n'
                         'Otherwise, the penalty coefficient is fixed.')

@@ -39,21 +39,21 @@ class AdaptiveKLController:
 @dataclass
 class PPOHParams(object):
     algorithm: str = field(repr=True, init=False, default="PPO")
+    reward_function_weighting: float = 10.0
 
     action_std: float = 0.0
     lr: float = 1.5e-6
     gamma: float = 0.99
-    lmbda: float = 0.99
-    K_epochs: int = 80
+    lmbda: float = 0.0
+    K_epochs: int = 5
     eps_clip: float = 0.2
     val_clip_coef: float = 0.2
-    entropy_loss_coeff: float = 0.01
+    entropy_loss_coeff: float = 0.0001
 
     adaptive_kl: bool = False
     kl_penalty_coeff: float = 0.02
-    kl_target: float = 0.01
+    kl_target: float = 0.005
     kl_horizon: int = 1000
-    reward_function_weighting: float = 1.0
 
 # TODO : ADD TYPES AND DESCRIPTION
 class PPO(RLAlgorithm):
@@ -134,11 +134,29 @@ class PPO(RLAlgorithm):
 
         self.on_policy = True
 
-        # Declare policy
+        def _assert_same_weights(model1, model2):
+            for p1, p2 in zip(model1.parameters(), model2.parameters()):
+                assert torch.all(torch.eq(p1, p2))
+
+
+        # Initialize policy and reference (old) policy.
         self.agent = PPOActorCritic(
             input_size, action_size, hidden_dims, device, action_std,
         ).to(device)
         self.old_agent = deepcopy(self.agent.actor)
+        _assert_same_weights(self.agent.actor, self.old_agent)
+
+        def _post_state_dict_agent_hook(module, incompatible_keys):
+            """
+            Since we are initializing the current and the reference policy
+            with the same weights, we need to make sure that when there's a
+            checkpoint loaded for the current policy (initially), the reference
+            should also be updated with the same weights.
+            """
+            self.old_agent.load_state_dict(self.agent.actor.state_dict())
+            
+        # The old agent should also be initialized to the loaded checkpoint.
+        self.agent.actor.register_load_state_dict_post_hook(_post_state_dict_agent_hook)
 
         # Note the optimizer is ran on the target network's params
         self.optimizer = torch.optim.Adam(
@@ -373,7 +391,8 @@ class PPO(RLAlgorithm):
             with torch.no_grad():
                 log_ratio = cur_logprobs - ref_logprobs.cpu().numpy()
                 running_mean_ratio += np.mean(log_ratio)
-                total_reward = reward - self.kl_penalty_ctrler.value * log_ratio
+                total_reward = reward - self.kl_penalty_ctrler.value \
+                    * self.hparams.reward_function_weighting * log_ratio
             self.kl_penalty_ctrler.update(log_ratio, episode_length)
 
             # Set next state as current state
