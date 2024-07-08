@@ -53,6 +53,7 @@ class PPOHParams(object):
     kl_penalty_coeff: float = 0.02
     kl_target: float = 0.01
     kl_horizon: int = 1000
+    reward_function_weighting: float = 1.0
 
 # TODO : ADD TYPES AND DESCRIPTION
 class PPO(RLAlgorithm):
@@ -217,7 +218,7 @@ class PPO(RLAlgorithm):
         running_losses = defaultdict(list)
 
         # Sample replay buffer
-        s, a, ret, adv, p, *_ = replay_buffer.sample()
+        s, a, ret, adv, p, val, *_ = replay_buffer.sample()
 
         # PPO allows for multiple gradient steps on the same data
         # TODO: Should be switched with the batch ?
@@ -232,6 +233,7 @@ class PPO(RLAlgorithm):
                 old_prob = torch.FloatTensor(p[i:j]).to(self.device)
                 returns = torch.FloatTensor(ret[i:j]).to(self.device)
                 advantage = torch.FloatTensor(adv[i:j]).to(self.device)
+                old_vals = torch.FloatTensor(val[i:j]).to(self.device)
 
                 # V_pi'(s) and pi'(a|s)
                 v, logprob, entropy, *_ = self.agent.evaluate(
@@ -267,13 +269,13 @@ class PPO(RLAlgorithm):
 
                 # Clip value as in PPO's implementation:
                 # https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/ppo2/model.py#L68-L75
-                # v_clipped = old_vals + torch.clamp(v - old_vals, -self.val_clip_coef, self.val_clip_coef)
+                v_clipped = old_vals + torch.clamp(v - old_vals, -self.val_clip_coef, self.val_clip_coef)
 
                 # AC Critic loss
                 critic_loss_unclipped = ((v - returns) ** 2).mean()
-                # critic_loss_clipped = ((v_clipped - returns) ** 2).mean()
+                critic_loss_clipped = ((v_clipped - returns) ** 2).mean()
 
-                # critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
+                critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
                 critic_loss = critic_loss_unclipped
 
                 losses = {

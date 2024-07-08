@@ -582,19 +582,20 @@ class RlhfReplayBuffer(object):
                          for i in range(len(self.lens))
                          for le in range(self.lens[i])))
         
-        s, a, ret, adv, probs = \
+        s, a, ret, adv, probs, vals = \
             (self.state[row, col],
              self.action[row, col],
              self.ret[row, col],
              self.adv[row, col],
-             self.probs[row, col])
+             self.probs[row, col],
+             self.values[row, col])
 
         shuf_ind = np.arange(s.shape[0])
 
         self.clear_memory()
 
         return (s[shuf_ind], a[shuf_ind], ret[shuf_ind],
-                adv[shuf_ind], probs[shuf_ind])
+                adv[shuf_ind], probs[shuf_ind], vals[shuf_ind])
 
     def clear_memory(self):
         """ Reset the buffer
