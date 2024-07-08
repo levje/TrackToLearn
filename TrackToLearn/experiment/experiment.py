@@ -37,6 +37,8 @@ class Experiment(object):
             "Train Reward", "train_reward", self.experiment_path)
         self.train_length_monitor = LossHistory(
             "Train Length", "length_reward", self.experiment_path)
+        self.train_ratio_monitor = LossHistory(
+            "Train Log-Ratio", "log_ratio", self.experiment_path)
         self.reward_monitor = LossHistory(
             "Reward - Alignment", "reward", self.experiment_path)
         self.actor_loss_monitor = LossHistory(

@@ -184,7 +184,7 @@ class Tracker(object):
         state = env.nreset(self.n_actor)
 
         # Track and train forward
-        reward, losses, length, reward_factors = \
+        reward, losses, length, reward_factors, mean_ratio = \
             self.alg._episode(state, env)
         # Get the streamlines generated from forward training
         train_tractogram = env.get_streamlines()
@@ -199,7 +199,8 @@ class Tracker(object):
             train_tractogram,
             mean_losses,
             reward,
-            mean_reward_factors)
+            mean_reward_factors,
+            mean_ratio)
 
     def track_and_validate(
         self,

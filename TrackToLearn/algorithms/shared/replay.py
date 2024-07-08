@@ -456,8 +456,8 @@ class RlhfReplayBuffer(object):
         self.lens = np.zeros((self.n_trajectories,), dtype=np.int32)
 
         # # GAE buffers
-        # self.ret = np.zeros((self.n_trajectories, self.max_traj_length))
-        # self.adv = np.zeros((self.n_trajectories, self.max_traj_length))
+        self.ret = np.zeros((self.n_trajectories, self.max_traj_length))
+        self.adv = np.zeros((self.n_trajectories, self.max_traj_length))
 
     def add(
         self,
@@ -508,33 +508,32 @@ class RlhfReplayBuffer(object):
 
         self.lens[ind] += 1
 
+        self._compute_adv_rets(ind, done)
+
         self.ptr += 1
 
-    def compute_adv_rets(self, rewards, lengths, values, next_values, not_done):
-        ret = np.zeros((self.n_trajectories, self.max_traj_length))
-        adv = np.zeros((self.n_trajectories, self.max_traj_length))
+    def _compute_adv_rets(self, ind, done):
+        for j in range(len(ind)):
 
-        for i in range(rewards.shape[0]): # For each trajectory
-            # Calculate the expected returns: the value function target
-            length = lengths[i]
-            rew = rewards[i, :length]
-            ret[i, :length] = \
-                self.discount_cumsum(
-                    rew, self.gamma)
+            i = ind[j]
+            if done[j]:
+                # Calculate the expected returns: the value function target
+                rew = self.reward[i, :self.ptr]
+                self.ret[i, :self.ptr] = \
+                    self.discount_cumsum(
+                        rew, self.gamma)
 
-            # Calculate GAE-Lambda with this trick
-            # https://stackoverflow.com/a/47971187
-            # TODO: make sure that this is actually correct
-            # TODO?: do it the usual way with a backwards loop
-            deltas = rew + \
-                (self.gamma * next_values[i, :length] * not_done[i, :length]) - values[i, :length]
+                # Calculate GAE-Lambda with this trick
+                # https://stackoverflow.com/a/47971187
+                # TODO: make sure that this is actually correct
+                # TODO?: do it the usual way with a backwards loop
+                deltas = rew + \
+                    (self.gamma * self.next_values[i, :self.ptr] * self.not_done[i, :self.ptr]) - self.values[i, :self.ptr]
 
-            if self.lmbda == 0:
-                adv[i, :length] = ret[i, :length] - values[i, :length]
-            else:
-                adv[i, :length] = self.discount_cumsum(deltas, self.gamma * self.lmbda)
-
-        return ret, adv
+                if self.lmbda == 0:
+                    self.adv[i, :self.ptr] = self.ret[i, :self.ptr] - self.values[i, :self.ptr]
+                else:
+                    self.adv[i, :self.ptr] = self.discount_cumsum(deltas, self.gamma * self.lmbda)
 
     def discount_cumsum(self, x, discount):
         """
@@ -583,22 +582,19 @@ class RlhfReplayBuffer(object):
                          for i in range(len(self.lens))
                          for le in range(self.lens[i])))
         
-        s, a, rew, probs, vals, next_vals, lengths, nd = \
+        s, a, ret, adv, probs = \
             (self.state[row, col],
              self.action[row, col],
-             self.reward[row, col],
-             self.probs[row, col],
-             self.values[row, col],
-             self.next_values[row, col],
-             np.asarray(col),
-             self.not_done[row, col])
+             self.ret[row, col],
+             self.adv[row, col],
+             self.probs[row, col])
 
         shuf_ind = np.arange(s.shape[0])
 
         self.clear_memory()
 
-        return (s[shuf_ind], a[shuf_ind], rew[shuf_ind],
-                probs[shuf_ind], vals[shuf_ind], next_vals[shuf_ind], lengths[shuf_ind], nd[shuf_ind])
+        return (s[shuf_ind], a[shuf_ind], ret[shuf_ind],
+                adv[shuf_ind], probs[shuf_ind])
 
     def clear_memory(self):
         """ Reset the buffer
@@ -623,8 +619,8 @@ class RlhfReplayBuffer(object):
         self.probs = np.zeros((self.n_trajectories, self.max_traj_length))
 
         # GAE buffers
-        # self.ret = np.zeros((self.n_trajectories, self.max_traj_length))
-        # self.adv = np.zeros((self.n_trajectories, self.max_traj_length))
+        self.ret = np.zeros((self.n_trajectories, self.max_traj_length))
+        self.adv = np.zeros((self.n_trajectories, self.max_traj_length))
 
     def __len__(self):
         return np.sum(self.lens)

@@ -277,7 +277,7 @@ class TrackToLearnTraining(Experiment):
 
             # Train for an episode
             env.load_subject()
-            tractogram, losses, reward, reward_factors = \
+            tractogram, losses, reward, reward_factors, mean_ratio = \
                 train_tracker.track_and_train(env)
 
             # Compute average streamline length
@@ -294,13 +294,16 @@ class TrackToLearnTraining(Experiment):
             print(
                 f"Episode Num: {i_episode+1} "
                 f"Avg len: {avg_length:.3f} Avg. reward: "
-                f"{avg_reward:.3f} sub: {env.subject_id}")
+                f"{avg_reward:.3f} sub: {env.subject_id}"
+                f"Avg. log-ratio: {mean_ratio:.3f}")
 
             # Update monitors
             self.train_reward_monitor.update(avg_reward)
             self.train_reward_monitor.end_epoch(i_episode)
             self.train_length_monitor.update(avg_length)
             self.train_length_monitor.end_epoch(i_episode)
+            self.train_ratio_monitor.update(mean_ratio)
+            self.train_ratio_monitor.end_epoch(i_episode)
 
             i_episode += 1
             # Update comet logs
@@ -313,6 +316,8 @@ class TrackToLearnTraining(Experiment):
                     self.train_reward_monitor, i_episode)
                 self.comet_monitor.update_train(
                     self.train_length_monitor, i_episode)
+                self.comet_monitor.update_train(
+                    self.train_ratio_monitor, i_episode)
                 mean_ep_losses = mean_losses(losses)
                 self.comet_monitor.log_losses(mean_ep_losses, i_episode)
 

@@ -5,9 +5,10 @@ from collections import defaultdict
 from torch import nn
 from typing import Tuple
 from dataclasses import dataclass, field
+from copy import deepcopy
 
 from TrackToLearn.algorithms.rl import RLAlgorithm
-from TrackToLearn.algorithms.shared.onpolicy import PPOActorCritic
+from TrackToLearn.algorithms.shared.onpolicy import PPOActorCritic, HybridMaxEntropyActor
 from TrackToLearn.algorithms.shared.replay import OnPolicyReplayBuffer, RlhfReplayBuffer
 from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.algorithms.shared.utils import (
@@ -49,7 +50,7 @@ class PPOHParams(object):
     entropy_loss_coeff: float = 0.01
 
     adaptive_kl: bool = False
-    kl_penalty_coeff: float = 0.05
+    kl_penalty_coeff: float = 0.02
     kl_target: float = 0.01
     kl_horizon: int = 1000
 
@@ -136,6 +137,7 @@ class PPO(RLAlgorithm):
         self.agent = PPOActorCritic(
             input_size, action_size, hidden_dims, device, action_std,
         ).to(device)
+        self.old_agent = deepcopy(self.agent.actor)
 
         # Note the optimizer is ran on the target network's params
         self.optimizer = torch.optim.Adam(
@@ -215,9 +217,7 @@ class PPO(RLAlgorithm):
         running_losses = defaultdict(list)
 
         # Sample replay buffer
-        # s, a, r, p, val, next_val, l, nd, *_ = \
-            # replay_buffer.sample()
-        s, a, ret, adv, p, val = replay_buffer.sample()
+        s, a, ret, adv, p, *_ = replay_buffer.sample()
 
         # PPO allows for multiple gradient steps on the same data
         # TODO: Should be switched with the batch ?
@@ -230,8 +230,8 @@ class PPO(RLAlgorithm):
                 state = torch.FloatTensor(s[i:j]).to(self.device)
                 action = torch.FloatTensor(a[i:j]).to(self.device)
                 old_prob = torch.FloatTensor(p[i:j]).to(self.device)
-                old_vals = torch.FloatTensor(val[i:j]).to(self.device)
-                old_next_vals = torch.FloatTensor(next_val[i:j]).to(self.device)
+                returns = torch.FloatTensor(ret[i:j]).to(self.device)
+                advantage = torch.FloatTensor(adv[i:j]).to(self.device)
 
                 # V_pi'(s) and pi'(a|s)
                 v, logprob, entropy, *_ = self.agent.evaluate(
@@ -239,30 +239,11 @@ class PPO(RLAlgorithm):
                     action,
                     probabilistic=1.0)
 
-                reward = torch.FloatTensor(r[i:j]).to(self.device)
-                lengths = torch.LongTensor(l[i:j]).to(self.device)
-                not_dones = torch.FloatTensor(nd[i:j]).to(self.device)
-                # returns = torch.FloatTensor(ret[i:j]).to(self.device)
-                # advantage = torch.FloatTensor(adv[i:j]).to(self.device)
-
                 # Ratio between probabilities of action according to policy and
                 # target policies
                 assert logprob.size() == old_prob.size(), \
                     '{}, {}'.format(logprob.size(), old_prob.size())
                 ratio = torch.exp(logprob - old_prob)
-                
-                # Apply KL penalty to rewards
-                # TODO: The KL penalty should be only applied to the oracle's reward.
-                # This should be weighted by the oracle weighting factor in the reward function.
-                total_reward = reward - self.kl_penalty_ctrler.value * ratio
-
-
-                # Returns and advantage calculated with KL-penalty for RLHF
-                returns, advantage = self.replay_buffer.compute_adv_rets(total_reward,
-                                                                         lengths,
-                                                                         old_vals,
-                                                                         old_next_vals,
-                                                                         not_dones)
 
                 # Surrogate policy loss
                 assert ratio.size() == advantage.size(), \
@@ -351,6 +332,7 @@ class PPO(RLAlgorithm):
         """
 
         running_reward = 0
+        running_mean_ratio = 0
         state = initial_state
         done = False
         running_losses = defaultdict(list)
@@ -369,10 +351,12 @@ class PPO(RLAlgorithm):
 
             self.t += action.shape[0]
 
-            v, prob, _ = self.agent.get_evaluation(
+            v, cur_logprobs, _ = self.agent.get_evaluation(
                 state,
                 action,
                 probabilistic=1.0)
+
+            _, ref_logprobs, _ = self.old_agent.forward(state, probabilistic=1.0)
 
             # Perform action
             next_state, reward, done, info = env.step(action.to(device='cpu', copy=True).numpy())
@@ -384,8 +368,14 @@ class PPO(RLAlgorithm):
                 action,
                 probabilistic=1.0)
 
+            with torch.no_grad():
+                log_ratio = cur_logprobs - ref_logprobs.cpu().numpy()
+                running_mean_ratio += np.mean(log_ratio)
+                total_reward = reward - self.kl_penalty_ctrler.value * log_ratio
+            self.kl_penalty_ctrler.update(log_ratio, episode_length)
+
             # Set next state as current state
-            running_reward += sum(reward)
+            running_reward += sum(total_reward)
 
             # Store data in replay buffer
             self.replay_buffer.add(
@@ -393,11 +383,11 @@ class PPO(RLAlgorithm):
                 state.cpu().numpy(),
                 action.cpu().numpy(),
                 next_state.cpu().numpy(),
-                reward,
+                total_reward,
                 done,
                 v,
                 vp,
-                prob)
+                cur_logprobs)
 
             # "Harvesting" here means removing "done" trajectories
             # from state as well as removing the associated streamlines
@@ -411,9 +401,12 @@ class PPO(RLAlgorithm):
         losses = self.update(
             self.replay_buffer)
         running_losses = add_item_to_means(running_losses, losses)
+        running_mean_ratio /= episode_length
 
         return (
             running_reward,
             running_losses,
             episode_length,
-            running_reward_factors)
+            running_reward_factors,
+            running_mean_ratio
+            )
