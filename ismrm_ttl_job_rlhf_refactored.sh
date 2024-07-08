@@ -141,9 +141,9 @@ do
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --alg ${ALG} \
-        --disable_oracle_training \
+        --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         "${additionnal_args[@]}"
-        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
+        # --disable_oracle_training \
         # --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"
         # --pretrain_max_ep ${PRETRAINSTEPS} \
