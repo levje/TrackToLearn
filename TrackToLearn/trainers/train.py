@@ -8,7 +8,7 @@ import torch
 import time
 
 from TrackToLearn.algorithms.rl import RLAlgorithm
-from TrackToLearn.algorithms.shared.utils import mean_losses, mean_rewards
+from TrackToLearn.algorithms.shared.utils import old_mean_losses as mean_losses, mean_rewards
 from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.experiment.experiment import (add_data_args,
                                                 add_environment_args,

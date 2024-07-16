@@ -11,14 +11,14 @@
 set -e
 
 # Set this to 0 if running on a cluster node.
-islocal=0
+islocal=1
 RUN_OFFLINE=0
 
 # Expriment parameters
 EXPNAME="TrackToLearnPPO"
 COMETPROJECT="TrackToLearnPPO"
-EXPID="2-PPOAgent_FixHParams"_$(date +"%F-%H_%M_%S")
-RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
+EXPID="5-Search-AlignedWithArticle"_$(date +"%F-%H_%M_%S")
+# RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=1000              # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
 # AGENTNBSTEPS=100        # Number of steps for the agent
@@ -27,8 +27,8 @@ MAXEP=1000              # Number of PPO iterations
 NPV=8
 SEEDS=(1111)
 BATCHSIZE=4096
-GAMMA=0.95
-LR=0.00005
+GAMMA=0.5
+LR=0.005
 THETA=30
 
 if [ $islocal -eq 1 ]; then
@@ -79,19 +79,22 @@ fi
 
 for RNGSEED in "${SEEDS[@]}"
 do
-    DEST_FOLDER="${EXPDIR}/${EXPNAME}/${EXPID}/${RNGSEED}"
+    DEST_FOLDER="${EXPDIR}/${EXPNAME}/${EXPID}"
 
     additionnal_args=()
-    if [ $RUN_OFFLINE -eq 1 ]; then
-        additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
-    fi
-    if [ -n "$AGENTCHECKPOINT" ]; then
-        additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
-    fi
+    # if [ $RUN_OFFLINE -eq 1 ]; then
+    #     additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
+    # fi
+    # if [ -n "$AGENTCHECKPOINT" ]; then
+    #     additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
+    # fi
 
     # Start training
     # Start training
-    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/ppo_train.py \
+    comet optimize -j 2 \
+        $SOURCEDIR/TrackToLearn/searchers/classic_ppo_searcher.py \
+        ppo_search_config.json \
+        -- \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
@@ -122,7 +125,7 @@ do
         --max_ep ${MAXEP} \
         --entropy_loss_coeff 0.001 \
         --lmbda 0.95 \
-        --eps_clip 0.1 \
+        --eps_clip 0.2 \
         --K_epochs 30 \
         "${additionnal_args[@]}"
 

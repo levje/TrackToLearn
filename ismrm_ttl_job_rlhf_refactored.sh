@@ -2,7 +2,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40000M
-#SBATCH --time=7-00:00:00
+#SBATCH --time=2-00:00:00
 #SBATCH --mail-user=jeremi.levesque@usherbrooke.ca
 #SBATCH --mail-type=ALL
 
@@ -25,16 +25,24 @@ ORACLENBSTEPS=5         # Number of steps for the oracle
 AGENTNBSTEPS=100        # Number of steps for the agent
 PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
-NPV=8
+NPV=1 #8 # Number of points per tractogram for training
 SEEDS=(1111)
 BATCHSIZE=4096
-GAMMA=0.95
-LR=0.00001
+GAMMA=0.95 # Reward discounting
+LR=0.0005
 THETA=30
 
 # PPO hparams
+ENTROPY_LOSS_COEFF=0.0001 # Entropy bonus for policy loss
+ACTION_STD=0.0 # Std use for the action
+K_EPOCHS=5
+LAMBDA=0 # For advantage estimation
 POLICYCLIP=0.2
 VALUECLIP=0.2
+KL_PENALTY_COEFF=0.0 # 0.02
+KL_TARGET=0.005
+KL_HORIZON=1000
+ADAPTIVE_KL=0 # Set to 1 to use adaptive KL
 
 
 if [ $islocal -eq 1 ]; then
@@ -101,8 +109,18 @@ do
     fi
 
     if [ $ALG == "PPO" ]; then
+        additionnal_args+=('--entropy_loss_coeff' "${ENTROPY_LOSS_COEFF}")
+        additionnal_args+=('--action_std' "${ACTION_STD}")
+        additionnal_args+=('--K_epochs' "${K_EPOCHS}")
         additionnal_args+=('--val_clip_coef' "${VALUECLIP}")
         additionnal_args+=('--eps_clip' "${POLICYCLIP}")
+        additionnal_args+=('--kl_penalty_coeff' "${KL_PENALTY_COEFF}")
+        additionnal_args+=('--kl_target' "${KL_TARGET}")
+        additionnal_args+=('--kl_horizon' "${KL_HORIZON}")
+
+        if [ $ADAPTIVE_KL -eq 1 ]; then
+            additionnal_args+=('--adaptive_kl')
+        fi
     fi
 
     # Start training
@@ -141,11 +159,11 @@ do
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --alg ${ALG} \
-        --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
+        --disable_oracle_training \
         "${additionnal_args[@]}"
-        # --disable_oracle_training \
-        # --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
+        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"
+        # --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
         # --pretrain_max_ep ${PRETRAINSTEPS} \
 
 done

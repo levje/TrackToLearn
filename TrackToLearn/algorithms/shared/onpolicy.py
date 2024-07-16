@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 from TrackToLearn.algorithms.shared.utils import (
     format_widths, make_fc_network)
+from TrackToLearn.oracles.transformer_oracle import TransformerOracle
 
 class HybridMaxEntropyActor(nn.Module):
     """ Actor module that takes in a state and outputs an action.
@@ -358,6 +359,17 @@ class Critic(nn.Module):
         """
 
         return self.layers(state)
+    
+class OracleBasedCritic(nn.Module):
+    def __init__(
+        self,
+        checkpoint: dict
+    ):
+        super(OracleBasedCritic, self).__init__()
+        self.model = TransformerOracle.load_from_checkpoint(checkpoint)
+
+    def forward(self, state) -> torch.Tensor:
+        return self.model(state)
 
 
 class ActorCritic(PolicyGradient):
@@ -373,7 +385,8 @@ class ActorCritic(PolicyGradient):
         hidden_dims: str,
         device: torch.device,
         action_std: float = 0.0,
-        actor_cls: nn.Module = Actor
+        actor_cls: nn.Module = Actor,
+        critic_checkpoint: dict = None
     ):
         super(ActorCritic, self).__init__(
             state_dim,
@@ -384,9 +397,12 @@ class ActorCritic(PolicyGradient):
             actor_cls
         )
 
-        self.critic = Critic(
-            state_dim, action_dim, self.hidden_layers,
-        ).to(self.device)
+        if critic_checkpoint is not None:
+            self.critic = OracleBasedCritic(critic_checkpoint).to(self.device)
+        else:
+            self.critic = Critic(
+                state_dim, action_dim, self.hidden_layers,
+            ).to(self.device)
 
     def evaluate(
         self, state: torch.Tensor, action: torch.Tensor, probabilistic: float
@@ -498,8 +514,8 @@ class ActorCritic(PolicyGradient):
         self.critic.train()
 
 class PPOActorCritic(ActorCritic):
-    def __init__(self, state_dim: int, action_dim: int, hidden_dims: str, device: torch.device, action_std: float = 0):
-        super().__init__(state_dim, action_dim, hidden_dims, device, action_std, actor_cls=HybridMaxEntropyActor)
+    def __init__(self, state_dim: int, action_dim: int, hidden_dims: str, device: torch.device, action_std: float = 0, critic_checkpoint: dict = None):
+        super().__init__(state_dim, action_dim, hidden_dims, device, action_std, actor_cls=HybridMaxEntropyActor, critic_checkpoint=critic_checkpoint)
 
     def load_policy(self, path: str, filename: str):
         self.actor.load_state_dict(

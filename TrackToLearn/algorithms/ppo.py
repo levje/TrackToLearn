@@ -83,6 +83,7 @@ class PPO(RLAlgorithm):
         action_std: float = 0.0,
         max_traj_length: int = 1,
         n_actors: int = 4096,
+        critic_checkpoint: dict = None,
         rng: np.random.RandomState = None,
         device: torch.device = "cuda:0",
     ):
@@ -138,10 +139,9 @@ class PPO(RLAlgorithm):
             for p1, p2 in zip(model1.parameters(), model2.parameters()):
                 assert torch.all(torch.eq(p1, p2))
 
-
         # Initialize policy and reference (old) policy.
         self.agent = PPOActorCritic(
-            input_size, action_size, hidden_dims, device, action_std,
+            input_size, action_size, hidden_dims, device, action_std, critic_checkpoint
         ).to(device)
         self.old_agent = deepcopy(self.agent.actor)
         _assert_same_weights(self.agent.actor, self.old_agent)
@@ -294,7 +294,7 @@ class PPO(RLAlgorithm):
                 critic_loss_clipped = ((v_clipped - returns) ** 2).mean()
 
                 critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
-                critic_loss = critic_loss_unclipped
+                # critic_loss = critic_loss_unclipped
 
                 losses = {
                     'actor_loss': actor_loss.item(),

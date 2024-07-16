@@ -1,0 +1,20 @@
+{
+    "algorithm": "grid",
+    "spec": {
+        "objective": "maximize",
+        "metric": "VC",
+        "seed": 1111,
+        "retryLimit": 3,
+        "retryAssignLimit": 3
+    },
+    "parameters": {
+        "lr": {
+            "type": "discrete",
+            "values": [1e-4, 1e-5, 1e-6]
+        },
+        "gamma": {
+            "type": "discrete",
+            "values": [0.95, 0.5]
+        }
+    }
+}

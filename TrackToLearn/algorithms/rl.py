@@ -91,7 +91,7 @@ class RLAlgorithm(object):
                 action = self.agent.select_action(state, probabilistic=prob)
             # Perform action
             next_state, reward, done, *_ = env.step(
-                action.to(device='cpu', copy=True).numpy())
+                action)
 
             # Keep track of reward
             running_reward += sum(reward)

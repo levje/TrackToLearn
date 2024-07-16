@@ -50,6 +50,9 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
         self.kl_target = ppo_train_dto['kl_target']
         self.kl_horizon = ppo_train_dto['kl_horizon']
 
+        self.critic_checkpoint = torch.load(ppo_train_dto['oracle_checkpoint'], map_location=get_device()) \
+            if ppo_train_dto['init_critic_to_oracle'] and ppo_train_dto['oracle_checkpoint'] else None
+
         self.ppo_hparams = PPOHParams(
             self.oracle_bonus,
             self.action_std,
@@ -86,6 +89,7 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
             self.action_std,
             max_nb_steps,
             self.n_actor,
+            self.critic_checkpoint,
             self.rng,
             get_device())
         return alg
@@ -114,6 +118,8 @@ def add_ppo_args(parser):
                         help='KL target value.')
     parser.add_argument('--kl_horizon', default=1000, type=int,
                         help='KL penalty horizon.')
+    parser.add_argument('--init_critic_to_oracle', action='store_true',
+                        help='Initialize the critic to the oracle model.')
 
 
 def parse_args():

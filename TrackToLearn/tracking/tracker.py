@@ -191,9 +191,9 @@ class Tracker(object):
 
         if len(losses.keys()) > 0:
             mean_losses = add_to_means(mean_losses, losses)
-        if len(reward_factors.keys()) > 0:
-            mean_reward_factors = add_to_means(
-                mean_reward_factors, reward_factors)
+        # if len(reward_factors.keys()) > 0:
+        #     mean_reward_factors = add_to_means(
+        #         mean_reward_factors, reward_factors)
 
         return (
             train_tractogram,

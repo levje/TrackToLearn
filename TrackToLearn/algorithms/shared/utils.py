@@ -11,6 +11,9 @@ def add_item_to_means(means, dic):
 def add_to_means(means, dic):
     return {k: means[k] + dic[k] for k in dic.keys()}
 
+# TODO: Remove that, it's just to test classic ppo implementation
+def old_mean_losses(dic):
+    return {k: np.mean(dic[k]) for k in dic.keys()}
 
 def mean_losses(dic):
     new_dict = {k: np.mean(torch.stack(dic[k]).cpu().numpy(), axis=0)
