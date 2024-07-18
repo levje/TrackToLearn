@@ -76,3 +76,5 @@ slurm*
 
 # TrackToLearn
 .temp*
+data/
+custom_models/
