@@ -107,7 +107,7 @@ class Tracker(object):
                 # Last batch might not be "full"
                 end = min(start + batch_size, len(env.seeds))
 
-                state = env.reset(start, end)
+                state, _ = env.reset(start, end)
 
                 # Track forward
                 self.alg.validation_episode(
@@ -181,7 +181,7 @@ class Tracker(object):
         mean_reward_factors = defaultdict(list)
 
         # Fetch n=n_actor seeds
-        state = env.nreset(self.n_actor)
+        state, _ = env.nreset(self.n_actor)
 
         # Track and train forward
         reward, losses, length, reward_factors, mean_ratio = \
@@ -240,7 +240,7 @@ class Tracker(object):
                 # Last batch might not be "full"
                 end = min(start + self.n_actor, len(env.seeds))
 
-                state = env.reset(start, end)
+                state, _ = env.reset(start, end)
 
                 # Track forward
                 reward = self.alg.validation_episode(

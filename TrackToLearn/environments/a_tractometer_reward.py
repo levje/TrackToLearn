@@ -506,7 +506,7 @@ def _extract_vb_one_bundle(
     # Remove out of inclusion mask (limits_mask)
     if len(vs_ids) > 0 and inv_all_mask is not None:
         tmp_sft = sft[vs_ids]
-        out_of_mask_ids_from_vs = filter_grid_roi(
+        _, out_of_mask_ids_from_vs = filter_grid_roi(
             tmp_sft, inv_all_mask, 'any', False)
         out_of_mask_ids = vs_ids[out_of_mask_ids_from_vs]
 
@@ -517,7 +517,7 @@ def _extract_vb_one_bundle(
     # Remove streamlines not passing through any_mask
     if len(vs_ids) > 0 and any_mask is not None:
         tmp_sft = sft[vs_ids]
-        in_mask_ids_from_vs = filter_grid_roi(
+        _, in_mask_ids_from_vs = filter_grid_roi(
             tmp_sft, any_mask, 'any', False)
         in_mask_ids = vs_ids[in_mask_ids_from_vs]
 

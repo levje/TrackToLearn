@@ -11,6 +11,7 @@ from TrackToLearn.algorithms.rl import RLAlgorithm
 from TrackToLearn.algorithms.shared.onpolicy import PPOActorCritic, HybridMaxEntropyActor
 from TrackToLearn.algorithms.shared.replay import OnPolicyReplayBuffer, RlhfReplayBuffer
 from TrackToLearn.environments.env import BaseEnv
+from TrackToLearn.environments.utils import fix_streamlines_length
 from TrackToLearn.algorithms.shared.utils import (
     add_item_to_means, mean_losses)
 
@@ -190,6 +191,7 @@ class PPO(RLAlgorithm):
             max_traj_length, self.gamma, self.lmbda)
 
         self.rng = rng
+        self.streamline_nb_points = 128
 
     def update(
         self,
@@ -236,7 +238,7 @@ class PPO(RLAlgorithm):
         running_losses = defaultdict(list)
 
         # Sample replay buffer
-        s, a, ret, adv, p, val, *_ = replay_buffer.sample()
+        s, st, a, ret, adv, p, val, *_ = replay_buffer.sample()
 
         # PPO allows for multiple gradient steps on the same data
         # TODO: Should be switched with the batch ?
@@ -247,6 +249,7 @@ class PPO(RLAlgorithm):
                 j = i + batch_size
 
                 state = torch.FloatTensor(s[i:j]).to(self.device)
+                streamline = st[i:j]
                 action = torch.FloatTensor(a[i:j]).to(self.device)
                 old_prob = torch.FloatTensor(p[i:j]).to(self.device)
                 returns = torch.FloatTensor(ret[i:j]).to(self.device)
@@ -257,7 +260,8 @@ class PPO(RLAlgorithm):
                 v, logprob, entropy, *_ = self.agent.evaluate(
                     state,
                     action,
-                    probabilistic=1.0)
+                    probabilistic=1.0,
+                    streamlines=streamline)
 
                 # Ratio between probabilities of action according to policy and
                 # target policies
@@ -354,6 +358,9 @@ class PPO(RLAlgorithm):
         running_reward = 0
         running_mean_ratio = 0
         state = initial_state
+        streamlines = np.zeros(
+            (state.shape[0], self.max_traj_length, 3),
+            dtype=np.float64)
         done = False
         running_losses = defaultdict(list)
         running_reward_factors = defaultdict(list)
@@ -369,24 +376,33 @@ class PPO(RLAlgorithm):
                 action = self.agent.select_action(
                     state, probabilistic=1.0)
 
+
             self.t += action.shape[0]
 
+            resampled_streamlines = \
+                fix_streamlines_length(streamlines, episode_length, self.streamline_nb_points)
+            
             v, cur_logprobs, _ = self.agent.get_evaluation(
                 state,
                 action,
-                probabilistic=1.0)
+                probabilistic=1.0,
+                streamlines=resampled_streamlines)
 
             _, ref_logprobs, _ = self.old_agent.forward(state, probabilistic=1.0)
 
             # Perform action
-            next_state, reward, done, info = env.step(action.to(device='cpu', copy=True).numpy())
+            next_state, next_streamlines, reward, done, info = env.step(action.to(device='cpu', copy=True).numpy())
             running_reward_factors = add_item_to_means(
                 running_reward_factors, info['reward_info'])
+
+            resampled_next_streamlines = \
+                fix_streamlines_length(next_streamlines, episode_length, self.streamline_nb_points)
 
             vp, *_ = self.agent.get_evaluation(
                 next_state,
                 action,
-                probabilistic=1.0)
+                probabilistic=1.0,
+                streamlines=resampled_next_streamlines)
 
             with torch.no_grad():
                 log_ratio = cur_logprobs - ref_logprobs.cpu().numpy()
@@ -402,6 +418,7 @@ class PPO(RLAlgorithm):
             self.replay_buffer.add(
                 indices,
                 state.cpu().numpy(),
+                resampled_streamlines,
                 action.cpu().numpy(),
                 next_state.cpu().numpy(),
                 total_reward,
@@ -412,7 +429,7 @@ class PPO(RLAlgorithm):
 
             # "Harvesting" here means removing "done" trajectories
             # from state as well as removing the associated streamlines
-            state, idx = env.harvest()
+            state, streamlines, idx = env.harvest()
 
             indices = indices[idx]
 

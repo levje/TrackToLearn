@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import contextlib
 
 from os.path import join as pjoin
 from torch import nn
@@ -10,6 +11,9 @@ import torch.nn.functional as F
 from TrackToLearn.algorithms.shared.utils import (
     format_widths, make_fc_network)
 from TrackToLearn.oracles.transformer_oracle import TransformerOracle
+from TrackToLearn.utils.torch_utils import get_device_str, get_device
+
+autocast_context = torch.cuda.amp.autocast if torch.cuda.is_available() else contextlib.nullcontext
 
 class HybridMaxEntropyActor(nn.Module):
     """ Actor module that takes in a state and outputs an action.
@@ -87,22 +91,26 @@ class HybridMaxEntropyActor(nn.Module):
         std = torch.exp(log_std) * probabilistic
         # Sample from Gaussian distribution using reparametrization trick
         pi_distribution = Normal(mu, std, validate_args=False)
-        pi_action = pi_distribution.rsample()
+        pre_pi_action = pi_distribution.rsample()
 
+        if torch.isnan(pre_pi_action.max()):
+            raise ValueError('Action is NaN')
         # Trick from Spinning Up's implementation:
         # Compute logprob from Gaussian, and then apply correction for Tanh
         # squashing. NOTE: The correction formula is a little bit magic. To
         # get an understanding of where it comes from, check out the
         # original SAC paper (arXiv 1801.01290) and look in appendix C.
         # This is a more numerically-stable equivalent to Eq 21.
-        logp_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
+        logp_pi = pi_distribution.log_prob(pre_pi_action).sum(axis=-1)
         # Squash correction
-        logp_pi -= (2*(np.log(2) - pi_action -
-                       F.softplus(-2*pi_action))).sum(axis=1)
+        logp_pi -= (2*(np.log(2) - pre_pi_action -
+                       F.softplus(-2*pre_pi_action))).sum(axis=1)
 
         # Run actions through tanh to get -1, 1 range
-        pi_action = self.output_activation(pi_action)
+        pi_action = self.output_activation(pre_pi_action)
         # Return action and logprob
+
+
         return pi_action, logp_pi, pi_distribution.entropy()
 
 class Actor(nn.Module):
@@ -188,6 +196,8 @@ class PolicyGradient(nn.Module):
         """ Select noisy action according to actor
         """
         action, logprob, entropy = self.actor.forward(state, probabilistic)
+        if torch.isnan(action.max()):
+            raise ValueError('Action is NaN')
         return action, logprob, entropy
 
     def evaluate(
@@ -363,13 +373,68 @@ class Critic(nn.Module):
 class OracleBasedCritic(nn.Module):
     def __init__(
         self,
-        checkpoint: dict
+        checkpoint: dict,
+        batch_size = 4096,
+        device = get_device()
     ):
         super(OracleBasedCritic, self).__init__()
         self.model = TransformerOracle.load_from_checkpoint(checkpoint)
+        self.device = device
+        self.batch_size = batch_size
 
-    def forward(self, state) -> torch.Tensor:
-        return self.model(state)
+    def forward(self, streamlines) -> torch.Tensor:
+        # This is copied from OracleSingleton!!
+
+        streamlines = list(streamlines)
+        # Total number of predictions to return
+        N = len(streamlines)
+        # Placeholders for input and output data
+        placeholder = torch.zeros(
+            (self.batch_size, 127, 3), pin_memory=get_device_str() == "cuda")
+        result = torch.zeros((N), dtype=torch.float, device=self.device)
+
+        # Get the first batch
+        batch = streamlines[:self.batch_size]
+        N_batch = len(batch)
+        # Resample streamlines to fixed number of point to set all
+        # sequences to same length
+        data = batch
+        # Compute streamline features as the directions between points
+        dirs = np.diff(data, axis=1)
+        # Send the directions to pinned memory
+        placeholder[:N_batch] = torch.from_numpy(dirs)
+        # Send the pinned memory to GPU asynchronously
+        input_data = placeholder[:N_batch].to(
+            self.device, non_blocking=True, dtype=torch.float)
+        i = 0
+
+        while i <= N // self.batch_size:
+            start = (i+1) * self.batch_size
+            end = min(start + self.batch_size, N)
+            # Prefetch the next batch
+            if start < end:
+                batch = streamlines[start:end]
+                # Resample streamlines to fixed number of point to set all
+                # sequences to same length
+                data = batch #set_number_of_points(batch, 128)
+                # Compute streamline features as the directions between points
+                dirs = np.diff(data, axis=1)
+                # Put the directions in pinned memory
+                placeholder[:end-start] = torch.from_numpy(dirs)
+
+            with autocast_context():
+                with torch.no_grad():
+                    predictions = self.model(input_data)
+                    result[
+                        i * self.batch_size:
+                        (i * self.batch_size) + self.batch_size] = predictions
+            i += 1
+            if i >= N // self.batch_size:
+                break
+            # Send the pinned memory to GPU asynchronously
+            input_data = placeholder[:end-start].to(
+                self.device, non_blocking=True, dtype=torch.float)
+        return result
 
 
 class ActorCritic(PolicyGradient):
@@ -405,19 +470,21 @@ class ActorCritic(PolicyGradient):
             ).to(self.device)
 
     def evaluate(
-        self, state: torch.Tensor, action: torch.Tensor, probabilistic: float
+        self, state: torch.Tensor, action: torch.Tensor, probabilistic: float, streamlines: torch.Tensor = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """ Get output of value function for the actions, as well as
         logprob of actions and entropy of policy for loss
         """
-
         _, logp_pi, entropy = self.actor.forward(state, probabilistic)
-        values = self.critic(state).squeeze(-1)
+        if isinstance(self.critic, OracleBasedCritic):
+            values = self.critic(streamlines).squeeze(-1)
+        else:
+            values = self.critic(state).squeeze(-1)
 
         return values, logp_pi, entropy
 
     def get_evaluation(
-        self, state: np.array, action: np.array, probabilistic: float
+        self, state: np.array, action: np.array, probabilistic: float, streamlines: np.array = None
     ) -> Tuple[np.array, np.array, np.array]:
         """ Move state and action to torch tensor,
         get value estimates for states, probabilities of actions
@@ -450,7 +517,7 @@ class ActorCritic(PolicyGradient):
         action = torch.as_tensor(
             action, dtype=torch.float32, device=self.device)
 
-        v, prob, entropy = self.evaluate(state, action, probabilistic)
+        v, prob, entropy = self.evaluate(state, action, probabilistic, streamlines)
 
         return (
             v.cpu().data.numpy(),

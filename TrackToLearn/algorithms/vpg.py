@@ -153,7 +153,7 @@ class VPG(RLAlgorithm):
                 action)
 
             # Perform action
-            next_state, reward, done, _ = env.step(action)
+            next_state, _, reward, done, _ = env.step(action)
 
             vp, *_ = self.agent.get_evaluation(
                 next_state,
@@ -169,7 +169,7 @@ class VPG(RLAlgorithm):
 
             # "Harvesting" here means removing "done" trajectories
             # from state as well as removing the associated streamlines
-            state, idx = env.harvest()
+            state, _, idx = env.harvest()
 
             indices = indices[idx]
 

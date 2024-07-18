@@ -443,6 +443,8 @@ class RlhfReplayBuffer(object):
         # RL Buffers "filled with zeros"
         self.state = np.zeros((
             self.n_trajectories, self.max_traj_length, self.state_dim))
+        self.streamlines = np.zeros((
+            self.n_trajectories, self.max_traj_length, 128, 3))
         self.action = np.zeros((
             self.n_trajectories, self.max_traj_length, self.action_dim))
         self.next_state = np.zeros((
@@ -463,6 +465,7 @@ class RlhfReplayBuffer(object):
         self,
         ind: np.ndarray,
         state: np.ndarray,
+        streamlines: np.ndarray,
         action: np.ndarray,
         next_state: np.ndarray,
         reward: np.ndarray,
@@ -477,6 +480,8 @@ class RlhfReplayBuffer(object):
         -----------
         state: np.ndarray
             Batch of states to be added to buffer
+        streamlines: np.ndarray
+            Batch of streamlines to be added to buffer
         action: np.ndarray
             Batch of actions to be added to buffer
         next_state: np.ndarray
@@ -494,6 +499,7 @@ class RlhfReplayBuffer(object):
 
         """
         self.state[ind, self.ptr] = state
+        self.streamlines[ind, self.ptr] = streamlines
         self.action[ind, self.ptr] = action
 
         # These are actually not needed
@@ -582,8 +588,9 @@ class RlhfReplayBuffer(object):
                          for i in range(len(self.lens))
                          for le in range(self.lens[i])))
         
-        s, a, ret, adv, probs, vals = \
+        s, st, a, ret, adv, probs, vals = \
             (self.state[row, col],
+             self.streamlines[row, col],
              self.action[row, col],
              self.ret[row, col],
              self.adv[row, col],
@@ -594,7 +601,7 @@ class RlhfReplayBuffer(object):
 
         self.clear_memory()
 
-        return (s[shuf_ind], a[shuf_ind], ret[shuf_ind],
+        return (s[shuf_ind], st[shuf_ind], a[shuf_ind], ret[shuf_ind],
                 adv[shuf_ind], probs[shuf_ind], vals[shuf_ind])
 
     def clear_memory(self):

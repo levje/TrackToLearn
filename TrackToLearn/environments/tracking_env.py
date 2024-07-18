@@ -86,7 +86,7 @@ class TrackingEnvironment(BaseEnv):
             self.streamlines[self.continue_idx, :self.length])
 
         # Setup input signal
-        return self.state[self.continue_idx]
+        return self.state[self.continue_idx], self.streamlines[self.continue_idx, :self.length]
 
     def reset(self, start: int, end: int) -> np.ndarray:
         """ Initialize tracking seeds and streamlines. Will select
@@ -130,7 +130,7 @@ class TrackingEnvironment(BaseEnv):
             self.streamlines[self.continue_idx, :self.length])
 
         # Setup input signal
-        return self.state[self.continue_idx]
+        return self.state[self.continue_idx], self.streamlines[self.continue_idx]
 
     def step(
         self,
@@ -216,6 +216,7 @@ class TrackingEnvironment(BaseEnv):
 
         return (
             self.state[self.continue_idx],
+            self.streamlines[self.continue_idx, :self.length],
             reward, self.dones[self.continue_idx],
             {'continue_idx': self.continue_idx,
              'reward_info': reward_info})
@@ -242,7 +243,7 @@ class TrackingEnvironment(BaseEnv):
         # Return the state corresponding to streamlines that are actually
         # still being tracked.
         # TODO: investigate why `not_stopping` is returned.
-        return self.state[self.continue_idx], self.not_stopping
+        return self.state[self.continue_idx], self.streamlines[self.continue_idx], self.not_stopping
 
     def get_streamlines(self):
         """ Obtain tracked streamlines from the environment.

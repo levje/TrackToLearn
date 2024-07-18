@@ -4,7 +4,7 @@ import numpy as np
 from dipy.io.stateful_tractogram import StatefulTractogram, Space, Tractogram
 
 from TrackToLearn.environments.reward import Reward
-
+from TrackToLearn.environments.utils import fix_streamlines_length
 from TrackToLearn.oracles.oracle import OracleSingleton
 
 
@@ -58,7 +58,8 @@ class OracleReward(Reward):
             return None
         N = dones.shape[0]
         reward = np.zeros((N))
-        predictions = self.model.predict(streamlines)
+        resampled_streamlines = fix_streamlines_length(streamlines, streamlines.shape[1], 128)
+        predictions = self.model.predict(resampled_streamlines)
         # Double indexing to get the indexes. Don't forget you
         # can't assign using double indexes as the first indexing
         # will return a copy of the array.
@@ -79,8 +80,9 @@ class OracleReward(Reward):
             # Change ref of streamlines. This is weird on the ISMRM2015
             # dataset as the diff and anat are not in the same space,
             # but it should be fine on other datasets.
+            done_streamlines = streamlines.copy()[dones] # These streamlines should all have the same number of points.
             tractogram = Tractogram(
-                streamlines=streamlines.copy()[dones])
+                streamlines=done_streamlines)
             tractogram.apply_affine(self.affine_vox2rasmm)
             sft = StatefulTractogram(
                 streamlines=tractogram.streamlines,
@@ -89,5 +91,11 @@ class OracleReward(Reward):
             sft.to_vox()
             sft.to_corner()
 
-            return self.reward(sft.streamlines, dones)
+            # Convert from ArraySequence to numpy array.
+            np_streamlines_to_reward = np.zeros_like(done_streamlines)
+            _rereferenced_streamlines = sft.streamlines # ArraySequence with streamlines of the same length.
+            for i in range(len(done_streamlines)):
+                np_streamlines_to_reward[i] = _rereferenced_streamlines[i]
+
+            return self.reward(np_streamlines_to_reward, dones)
         return np.zeros((N))

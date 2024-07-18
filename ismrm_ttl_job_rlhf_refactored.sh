@@ -28,15 +28,15 @@ PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint
 NPV=1 #8 # Number of points per tractogram for training
 SEEDS=(1111)
 BATCHSIZE=4096
-GAMMA=0.95 # Reward discounting
-LR=0.0005
+GAMMA=0.5 # Reward discounting (could also be 0.95)
+LR=0.00001 # 1e-5
 THETA=30
 
 # PPO hparams
 ENTROPY_LOSS_COEFF=0.0001 # Entropy bonus for policy loss
 ACTION_STD=0.0 # Std use for the action
-K_EPOCHS=5
-LAMBDA=0 # For advantage estimation
+K_EPOCHS=30
+LAMBDA=0.95 # For advantage estimation
 POLICYCLIP=0.2
 VALUECLIP=0.2
 KL_PENALTY_COEFF=0.0 # 0.02
@@ -158,8 +158,9 @@ do
         --oracle_train_steps ${ORACLENBSTEPS} \
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
-        --alg ${ALG} \
         --disable_oracle_training \
+        --init_critic_to_oracle \
+        --alg ${ALG} \
         "${additionnal_args[@]}"
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"

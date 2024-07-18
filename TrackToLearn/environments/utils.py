@@ -1,7 +1,9 @@
 import numpy as np
 from dipy.tracking import metrics as tm
+from dipy.tracking.streamline import set_number_of_points
 from multiprocessing import Pool
 from scipy.ndimage import map_coordinates
+from nibabel.streamlines.array_sequence import ArraySequence
 
 from TrackToLearn.utils.utils import normalize_vectors
 
@@ -280,3 +282,55 @@ def remove_loops_and_sharp_turns(streamlines,
     ids = list(np.where(np.array(windings) < max_angle)[0])
 
     return ids
+
+def fix_streamlines_length(streamlines: np.ndarray,
+                           current_streamlines_length: int,
+                           streamline_nb_points: int):
+    """
+    This function is used to fix the length of the streamlines. This is
+    especially useful when providing streamlines to a neural network with
+    a fixed input size.
+
+    1. If the provided streamlines are shorter than streamline_nb_points,
+    pad them with zeros.
+    2. If the provided streamlines are longer than streamline_nb_points,
+    downsample them to streamline_nb_points.
+    3. If the streamlines are contained within already padded zeros, then
+    just return the first streamline_nb_points.
+
+    Parameters
+    ----------
+    streamlines: ndarray
+        The list of streamlines from which to remove loops and sharp turns.
+    current_streamlines_length: int
+        The length of all streamlines provided in the first parameter.
+    streamline_nb_points: int
+        Target length of the desired outputted streamlines.
+
+    Returns
+    -------
+    ndarray of shape (nb_streamlines, streamline_nb_points, 3)
+        The padded/downsampled streamlines.
+    """
+
+    if isinstance(streamlines, ArraySequence):
+        # This is probably very slow
+        numpy_streamlines = np.zeros((len(streamlines), current_streamlines_length, 3))
+        for i, sl in enumerate(streamlines):
+            streamlines[i] = fix_streamlines_length(sl, current_streamlines_length, streamline_nb_points)
+        streamlines = np.array(streamlines) 
+
+    # Input is shorter: padding.
+    if streamlines.shape[1] < streamline_nb_points:
+        resampled_next_streamlines = np.zeros((streamlines.shape[0], streamline_nb_points, 3))
+        resampled_next_streamlines[:, :streamlines.shape[1]] = streamlines
+    # Downsample
+    elif current_streamlines_length > streamline_nb_points:
+        resampled_next_streamlines = np.asarray(set_number_of_points(list(streamlines[:, :current_streamlines_length]), streamline_nb_points))
+    # Input is longer, but the provided streamlines are already padded with zeros
+    # (but the input is possibly still longer than streamline_nb_points).
+    else:
+        resampled_next_streamlines = streamlines[:, :streamline_nb_points]
+
+    assert resampled_next_streamlines.shape[1] == streamline_nb_points
+    return resampled_next_streamlines

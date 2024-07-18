@@ -184,7 +184,7 @@ class DDPG(RLAlgorithm):
                 action = self.sample_action(state)
 
             # Perform action
-            next_state, reward, done, info = env.step(
+            next_state, _, reward, done, info = env.step(
                 action.to(device='cpu', copy=True).numpy())
             done_bool = done
 
@@ -221,7 +221,7 @@ class DDPG(RLAlgorithm):
             # "Harvesting" here means removing "done" trajectories
             # from state as well as removing the associated streamlines
             # This line also set the next_state as the state
-            state, _ = env.harvest()
+            state, _, _ = env.harvest()
 
             # Keeping track of episode length
             episode_length += 1
@@ -229,7 +229,8 @@ class DDPG(RLAlgorithm):
             running_reward,
             running_losses,
             episode_length,
-            running_reward_factors)
+            running_reward_factors,
+            0)
 
     def update(
         self,

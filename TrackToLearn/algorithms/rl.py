@@ -90,8 +90,8 @@ class RLAlgorithm(object):
             with torch.no_grad():
                 action = self.agent.select_action(state, probabilistic=prob)
             # Perform action
-            next_state, reward, done, *_ = env.step(
-                action)
+            next_state, _, reward, done, *_ = env.step(
+                action.to(device='cpu', copy=True).numpy())
 
             # Keep track of reward
             running_reward += sum(reward)
@@ -99,7 +99,7 @@ class RLAlgorithm(object):
             # "Harvesting" here means removing "done" trajectories
             # from state. This line also set the next_state as the
             # state
-            state, _ = env.harvest()
+            state, _, _ = env.harvest()
 
         # env.render()
 

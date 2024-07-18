@@ -117,7 +117,7 @@ class TrackToLearnValidation(Experiment):
         env = self.get_valid_env()
 
         # Get example state to define NN input size
-        example_state = env.reset(0, 1)
+        example_state, _ = env.reset(0, 1)
         self.input_size = example_state.shape[1]
         self.action_size = env.get_action_size()
 

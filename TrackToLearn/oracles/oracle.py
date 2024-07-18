@@ -4,6 +4,7 @@ from dipy.tracking.streamline import set_number_of_points
 
 from TrackToLearn.oracles.transformer_oracle import TransformerOracle
 from TrackToLearn.utils.torch_utils import get_device_str, get_device
+from nibabel.streamlines.array_sequence import ArraySequence
 import contextlib
 
 autocast_context = torch.cuda.amp.autocast if torch.cuda.is_available() else contextlib.nullcontext
@@ -49,7 +50,12 @@ class OracleSingleton:
         N_batch = len(batch)
         # Resample streamlines to fixed number of point to set all
         # sequences to same length
-        data = set_number_of_points(batch, 128)
+        if isinstance(streamlines, ArraySequence):
+            data = set_number_of_points(batch, 128)
+        else:
+            assert streamlines.shape[1] == 128
+            data = batch
+
         # Compute streamline features as the directions between points
         dirs = np.diff(data, axis=1)
         # Send the directions to pinned memory

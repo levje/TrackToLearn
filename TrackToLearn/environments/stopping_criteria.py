@@ -3,6 +3,7 @@ from enum import Enum
 import numpy as np
 from dipy.io.stateful_tractogram import Space, StatefulTractogram, Tractogram
 from scipy.ndimage import map_coordinates, spline_filter
+from TrackToLearn.environments.utils import fix_streamlines_length
 
 from TrackToLearn.oracles.oracle import OracleSingleton
 
@@ -134,7 +135,7 @@ class OracleStoppingCriterion(object):
         if L > self.min_nb_steps:
 
             tractogram = Tractogram(
-                streamlines=streamlines.copy())
+                streamlines=streamlines.copy()) # These streamlines should all have the same number of points.
 
             tractogram.apply_affine(self.affine_vox2rasmm)
 
@@ -145,7 +146,13 @@ class OracleStoppingCriterion(object):
 
             sft.to_vox()
             sft.to_corner()
-            predictions = self.model.predict(sft.streamlines)
+
+            np_streamlines_to_predict = np.zeros_like(streamlines)
+            _rereferenced_streamlines = sft.streamlines # ArraySequence with streamlines of the same length.
+            for i in range(len(streamlines)):
+                np_streamlines_to_predict[i] = _rereferenced_streamlines[i]
+            resampled_streamlines = fix_streamlines_length(np_streamlines_to_predict, np_streamlines_to_predict.shape[1], 128)
+            predictions = self.model.predict(resampled_streamlines)
 
             scores = np.zeros_like(predictions)
             scores[predictions < 0.5] = 1

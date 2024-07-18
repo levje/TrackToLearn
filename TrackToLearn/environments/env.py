@@ -481,7 +481,7 @@ class BaseEnv(object):
             Size of the state space.
         """
 
-        example_state = self.reset(0, 1)
+        example_state, _ = self.reset(0, 1)
         self._state_size = example_state.shape[1]
         return self._state_size
 
