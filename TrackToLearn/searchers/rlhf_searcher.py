@@ -35,6 +35,10 @@ def main():
                 "type": "categorical",
                 "values": [0, 1]
             },
+            "kl_penalty_coeff": {
+                "type": "discrete",
+                "values": [0.0, 0.02]
+            },
         },
 
         # Declare what we will be optimizing, and how:
