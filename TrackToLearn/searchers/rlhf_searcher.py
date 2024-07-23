@@ -28,11 +28,11 @@ def main():
                 "values": [1e-5]
             },
             "init_critic_to_oracle": {
-                "type": "categorical",
+                "type": "discrete",
                 "values": [0, 1]
             },
             "disable_oracle_training": {
-                "type": "categorical",
+                "type": "discrete",
                 "values": [0, 1]
             },
             "kl_penalty_coeff": {
