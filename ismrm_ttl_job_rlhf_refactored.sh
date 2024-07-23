@@ -43,6 +43,7 @@ KL_PENALTY_COEFF=0.0 # 0.02
 KL_TARGET=0.005
 KL_HORIZON=1000
 ADAPTIVE_KL=0 # Set to 1 to use adaptive KL
+INIT_CRITIC_TO_ORACLE=1 # Set to 1 to initialize the critic to the oracle
 
 
 if [ $islocal -eq 1 ]; then
@@ -106,6 +107,8 @@ do
 
     if [ -n "$AGENTCHECKPOINT" ]; then
         additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
+    else
+        additionnal_args+=('--pretrain_max_ep' "${PRETRAINSTEPS}")
     fi
 
     if [ $ALG == "PPO" ]; then
@@ -120,6 +123,10 @@ do
 
         if [ $ADAPTIVE_KL -eq 1 ]; then
             additionnal_args+=('--adaptive_kl')
+        fi
+
+        if [ $INIT_CRITIC_TO_ORACLE -eq 1 ]; then
+            additionnal_args+=('--init_critic_to_oracle')
         fi
     fi
 
@@ -160,13 +167,9 @@ do
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --disable_oracle_training \
         --alg ${ALG} \
-        --init_critic_to_oracle \
         "${additionnal_args[@]}"
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"
-        # --agent_checkpoint "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model" \
-        # --pretrain_max_ep ${PRETRAINSTEPS} \
-
 done
 
 if [ $islocal -eq 1 ]; then

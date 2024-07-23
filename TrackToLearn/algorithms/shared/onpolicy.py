@@ -480,12 +480,12 @@ class ActorCritic(PolicyGradient):
         """
         _, logp_pi, entropy = self.actor.forward(state, probabilistic)
         if isinstance(self.critic, OracleBasedCritic):
-            values = self.critic(streamlines).squeeze(-1)
+            values = self.critic(streamlines)
         else:
             values = self.critic(state)
-            if values.dim() > 1:
-                values = values.squeeze(-1)
-            
+
+        if values.dim() > 1:
+            values = values.squeeze(-1)
 
         return values, logp_pi, entropy
 

@@ -8,6 +8,7 @@ from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
 
 from TrackToLearn.algorithms.ppo import PPO, PPOHParams
+from TrackToLearn.algorithms.shared.onpolicy import OracleBasedCritic, Critic
 from TrackToLearn.trainers.train import TrackToLearnTraining, add_training_args
 from TrackToLearn.utils.torch_utils import get_device, assert_accelerator
 
@@ -52,6 +53,7 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
 
         self.critic_checkpoint = torch.load(ppo_train_dto['oracle_checkpoint'], map_location=get_device()) \
             if ppo_train_dto['init_critic_to_oracle'] and ppo_train_dto['oracle_checkpoint'] else None
+        self.critic_architecture = OracleBasedCritic if self.critic_checkpoint is not None else Critic
 
         self.ppo_hparams = PPOHParams(
             self.oracle_bonus,
@@ -73,8 +75,11 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
         """ Add PPO-specific hyperparameters to self.hyperparameters
         then save to file.
         """
-
         self.hyperparameters.update(self.ppo_hparams.__dict__)
+        self.hyperparameters.update({
+            "critic_architecture": self.critic_architecture.__name__,
+            "critic_checkpoint": self.critic_checkpoint,
+        })
 
         super().save_hyperparameters()
 
