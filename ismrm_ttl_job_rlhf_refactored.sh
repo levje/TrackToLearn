@@ -81,8 +81,8 @@ else
     source ~/ENV-TTL-2/bin/activate # Ideally, we would build the environnement within the node itself, but too much dependencies for now.
 
     # Prepare datasets
-    mkdir $DATADIR
-    mkdir $EXPDIR
+    mkdir -p $DATADIR
+    mkdir -p $EXPDIR
 
     echo "Unpacking datasets..."
     tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
