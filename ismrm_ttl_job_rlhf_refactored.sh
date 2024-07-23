@@ -15,9 +15,9 @@ islocal=1
 RUN_OFFLINE=0
 
 # Expriment parameters
-EXPNAME="TrackToLearnRLHF"
-COMETPROJECT="TrackToLearnRLHF"
-EXPID="XX-TestPPO-KLPEN-DSAugment_"_$(date +"%F-%H_%M_%S")
+EXPNAME="TrackToLearnRLHF-PPO-Search"
+COMETPROJECT="TrackToLearnRLHF-PPO-Search"
+EXPID="RLHFPPO_Search_"_$(date +"%F-%H_%M_%S")
 ALG="PPO" #"SACAuto"
 RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
@@ -25,7 +25,7 @@ ORACLENBSTEPS=5         # Number of steps for the oracle
 AGENTNBSTEPS=100        # Number of steps for the agent
 PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
-NPV=1 #8 # Number of points per tractogram for training
+NPV=8 # Number of points per tractogram for training
 SEEDS=(1111)
 BATCHSIZE=4096
 GAMMA=0.5 # Reward discounting (could also be 0.95)
@@ -131,7 +131,7 @@ do
     fi
 
     # Start training
-    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/rlhf_refactored_train.py \
+    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/searchers/rlhf_searcher.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
