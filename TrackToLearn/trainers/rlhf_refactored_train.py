@@ -38,7 +38,8 @@ class RlhfRefactored(TrackToLearnTraining):
     def __init__(
         self,
         rlhf_train_dto: dict,
-        trainer_cls: TrackToLearnTraining
+        trainer_cls: TrackToLearnTraining,
+        agent_experiment: CometExperiment = None
         ):
         super().__init__(
             rlhf_train_dto
@@ -66,19 +67,21 @@ class RlhfRefactored(TrackToLearnTraining):
         # Start by initializing the agent trainer.     #
         offline = rlhf_train_dto['comet_offline_dir'] is not None
 
-        if offline:
-            agent_experiment = CometOfflineExperiment(project_name=self.experiment,
-                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
-                                        auto_metric_logging=False,
-                                        disabled=not self.use_comet,
-                                        offline_directory=self.comet_offline_dir)
-        else:
-            agent_experiment = CometExperiment(project_name=self.experiment,
-                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
-                                        auto_metric_logging=False,
-                                        disabled=not self.use_comet)
+        if agent_experiment is None:
+            if offline:
+                agent_experiment = CometOfflineExperiment(project_name=self.experiment,
+                                            workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                            auto_metric_logging=False,
+                                            disabled=not self.use_comet,
+                                            offline_directory=self.comet_offline_dir)
+            else:
+                agent_experiment = CometExperiment(project_name=self.experiment,
+                                            workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                            auto_metric_logging=False,
+                                            disabled=not self.use_comet)
 
-        agent_experiment.set_name(self.name)
+            agent_experiment.set_name(self.name)
+
         self.agent_trainer = trainer_cls(rlhf_train_dto, agent_experiment)
         _ = self.agent_trainer.setup_environment_and_info()
         self.get_alg = self.agent_trainer.get_alg

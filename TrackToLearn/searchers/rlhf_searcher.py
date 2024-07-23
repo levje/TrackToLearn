@@ -5,7 +5,8 @@ import os
 
 from TrackToLearn.trainers.rlhf_refactored_train import (
     RlhfRefactored,
-    parse_args)
+    parse_args,
+    get_trainer_cls_and_args)
 from TrackToLearn.utils.torch_utils import get_device, assert_accelerator
 device = get_device()
 assert_accelerator()
@@ -73,9 +74,11 @@ def main():
             'disable_oracle_training': is_oracle_training_disabled,
         })
 
+        trainer_cls = get_trainer_cls_and_args(args.alg)
         sac_experiment = RlhfRefactored(
             arguments,
-            experiment
+            trainer_cls
+            # experiment
         )
         sac_experiment.run()
 
