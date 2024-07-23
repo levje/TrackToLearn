@@ -9,7 +9,7 @@ def get_device():
         return torch.device("cpu")
     
 def assert_accelerator():
-    assert torch.cuda.is_available() or torch.backends.mps.is_available()
+    assert torch.cuda.is_available() or torch.backends.mps.is_available(), "Hardware acceleration is mandatory, but only no device was found."
 
 def get_device_str():
     return str(get_device())

@@ -13,7 +13,9 @@ from TrackToLearn.algorithms.shared.replay import OnPolicyReplayBuffer, RlhfRepl
 from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.environments.utils import fix_streamlines_length
 from TrackToLearn.algorithms.shared.utils import (
-    add_item_to_means, mean_losses)
+    add_item_to_means, old_mean_losses)
+from TrackToLearn.utils.utils import TTLProfiler
+from time import time
 
 
 # KL Controllers based on
@@ -192,6 +194,7 @@ class PPO(RLAlgorithm):
 
         self.rng = rng
         self.streamline_nb_points = 128
+        self.verbose = False
 
     def update(
         self,
@@ -243,18 +246,19 @@ class PPO(RLAlgorithm):
         # PPO allows for multiple gradient steps on the same data
         # TODO: Should be switched with the batch ?
         for _ in range(self.K_epochs):
-
+            pr = TTLProfiler(enabled=False, throw_at_stop=True)
+            pr.start()
             for i in range(0, len(s), batch_size):
                 # you can slice further than an array's length
                 j = i + batch_size
-
-                state = torch.FloatTensor(s[i:j]).to(self.device)
+                
                 streamline = st[i:j]
-                action = torch.FloatTensor(a[i:j]).to(self.device)
-                old_prob = torch.FloatTensor(p[i:j]).to(self.device)
-                returns = torch.FloatTensor(ret[i:j]).to(self.device)
-                advantage = torch.FloatTensor(adv[i:j]).to(self.device)
-                old_vals = torch.FloatTensor(val[i:j]).to(self.device)
+                state = s[i:j]
+                action = a[i:j]
+                old_prob = p[i:j]
+                returns = ret[i:j]
+                advantage = adv[i:j]
+                old_vals = val[i:j]
 
                 # V_pi'(s) and pi'(a|s)
                 v, logprob, entropy, *_ = self.agent.evaluate(
@@ -298,20 +302,41 @@ class PPO(RLAlgorithm):
                 critic_loss_clipped = ((v_clipped - returns) ** 2).mean()
 
                 critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
-                # critic_loss = critic_loss_unclipped
+                
+                def get_losses():
+                    def get_critic_loss():
+                        return critic_loss.item()
+                    def get_actor_loss():
+                        return actor_loss.item()
+                    def get_ratio():
+                        return ratio.mean().item()
+                    def get_surrogate_loss_1():
+                        return surrogate_policy_loss_1.mean().item()
+                    def get_surrogate_loss_2():
+                        return surrogate_policy_loss_2.mean().item()
+                    def get_advantage():
+                        return advantage.mean().item()
+                    def get_entropy():
+                        return entropy.mean().item()
+                    def get_ret():
+                        return returns.mean().item()
+                    def get_v():
+                        return v.mean().item()
 
-                losses = {
-                    'actor_loss': actor_loss.item(),
-                    'critic_loss': critic_loss.item(),
-                    'ratio': ratio.mean().item(),
-                    'surrogate_loss_1': surrogate_policy_loss_1.mean().item(),
-                    'surrogate_loss_2': surrogate_policy_loss_2.mean().item(),
-                    'advantage': advantage.mean().item(),
-                    'entropy': entropy.mean().item(),
-                    'ret': returns.mean().item(),
-                    'v': v.mean().item(),
-                }
-
+                    losses = {
+                        'ratio': get_ratio(),
+                        'critic_loss': get_critic_loss(),
+                        'actor_loss': get_actor_loss(),
+                        'surrogate_loss_1': get_surrogate_loss_1(),
+                        'surrogate_loss_2': get_surrogate_loss_2(),
+                        'advantage': get_advantage(),
+                        'entropy': get_entropy(),
+                        'ret': get_ret(),
+                        'v': get_v(),
+                    }
+                    return losses
+                
+                losses = get_losses()
                 running_losses = add_item_to_means(running_losses, losses)
 
                 self.optimizer.zero_grad()
@@ -322,7 +347,9 @@ class PPO(RLAlgorithm):
                                          0.5)
                 self.optimizer.step()
 
-        return {}
+            pr.stop()
+
+        return old_mean_losses(running_losses)
     
     def _episode(
         self,
@@ -369,13 +396,14 @@ class PPO(RLAlgorithm):
         indices = np.asarray(range(state.shape[0]))
 
         while not np.all(done):
+            if self.verbose:
+                print('_episode ({}) ...\r'.format(episode_length), end='')
 
             # Select action according to policy
             # Noise is already added by the policy
             with torch.no_grad():
                 action = self.agent.select_action(
                     state, probabilistic=1.0)
-
 
             self.t += action.shape[0]
 
@@ -392,6 +420,7 @@ class PPO(RLAlgorithm):
 
             # Perform action
             next_state, next_streamlines, reward, done, info = env.step(action.to(device='cpu', copy=True).numpy())
+            reward = torch.as_tensor(reward, dtype=torch.float32)
             running_reward_factors = add_item_to_means(
                 running_reward_factors, info['reward_info'])
 
@@ -405,8 +434,8 @@ class PPO(RLAlgorithm):
                 streamlines=resampled_next_streamlines)
 
             with torch.no_grad():
-                log_ratio = cur_logprobs - ref_logprobs.cpu().numpy()
-                running_mean_ratio += np.mean(log_ratio)
+                log_ratio = (cur_logprobs - ref_logprobs).to('cpu')
+                running_mean_ratio += log_ratio.mean().item()
                 total_reward = reward - self.kl_penalty_ctrler.value \
                     * self.hparams.reward_function_weighting * log_ratio
             self.kl_penalty_ctrler.update(log_ratio, episode_length)
@@ -415,17 +444,19 @@ class PPO(RLAlgorithm):
             running_reward += sum(total_reward)
 
             # Store data in replay buffer
-            self.replay_buffer.add(
-                indices,
-                state.cpu().numpy(),
-                resampled_streamlines,
-                action.cpu().numpy(),
-                next_state.cpu().numpy(),
-                total_reward,
-                done,
-                v,
-                vp,
-                cur_logprobs)
+            with torch.no_grad():
+                rb_device = self.replay_buffer.storing_device
+                self.replay_buffer.add(
+                    torch.tensor(indices),
+                    state.to(device=rb_device, copy=True),
+                    torch.as_tensor(resampled_streamlines, device=rb_device, dtype=torch.float32),
+                    action.to(device=rb_device, copy=True),
+                    next_state.to(device=rb_device, copy=True),
+                    torch.as_tensor(total_reward, device=rb_device, dtype=torch.float32),
+                    torch.as_tensor(done, device=rb_device, dtype=torch.float32),
+                    v.to(device=rb_device, copy=True),
+                    vp.to(device=rb_device, copy=True),
+                    cur_logprobs.to(device=rb_device, copy=True))
 
             # "Harvesting" here means removing "done" trajectories
             # from state as well as removing the associated streamlines
@@ -436,8 +467,15 @@ class PPO(RLAlgorithm):
             # Keeping track of episode length
             episode_length += 1
 
+        if self.verbose:
+            print("_update...", end='')
+        
         losses = self.update(
             self.replay_buffer)
+        
+        if self.verbose:
+            print("done")
+
         running_losses = add_item_to_means(running_losses, losses)
         running_mean_ratio /= episode_length
 

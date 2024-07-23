@@ -1,6 +1,7 @@
 import os
 
 from setuptools import setup
+from torch.utils import cpp_extension
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -91,4 +92,16 @@ setup(
             "ttl_track_from_hdf5.py=TrackToLearn.runners.ttl_track_from_hdf5:main"] # noqa E501
     },
     include_package_data=True,
+
+    # List C++ extensions
+    ext_modules=[
+        cpp_extension.CppExtension(
+            'TrackToLearn.algorithms.shared.disc_cumsum',
+            ['TrackToLearn/algorithms/shared/disc_cumsum.cpp'],
+        ),
+    ],
+
+    cmdclass={
+        'build_ext': cpp_extension.BuildExtension
+    },
 )

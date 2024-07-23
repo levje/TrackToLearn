@@ -5,7 +5,7 @@ import sys
 from dipy.core.geometry import sphere2cart
 from os.path import join as pjoin
 from time import time
-
+import cProfile, pstats, io
 import numpy as np
 
 COLOR_CODES = {
@@ -130,3 +130,41 @@ def from_polar(actions, radius=1.):
     X, Y, Z = sphere2cart(radii, theta, phi)
     cart_directions = np.stack((X, Y, Z), axis=-1)
     return cart_directions
+
+
+class TTLProfiler:
+    def __init__(self, enabled: bool = True, throw_at_stop: bool = True) -> None:
+        self.pr = None
+        self.enabled = enabled
+        self.throw_at_stop = throw_at_stop
+
+    def start(self):
+        if not self.enabled:
+            return
+        
+        if self.pr is not None:
+            import warnings
+            warnings.warn("Profiler already started. Stop it before starting a new one.")
+            return
+        
+        self.pr = cProfile.Profile()
+        self.pr.enable()
+
+    def stop(self):
+        if not self.enabled:
+            return
+
+        if self.pr is None:
+            import warnings
+            warnings.warn("Profiler not started, but stop() was called.")
+            return
+        
+        self.pr.disable()
+        s = io.StringIO()
+        ps = pstats.Stats(self.pr, stream=s).sort_stats('cumulative')
+        ps.print_stats()
+        print(s.getvalue())
+        self.pr = None
+
+        if self.throw_at_stop:
+            raise RuntimeError("Profiling stopped.")

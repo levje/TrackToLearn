@@ -385,7 +385,6 @@ class OracleBasedCritic(nn.Module):
     def forward(self, streamlines) -> torch.Tensor:
         # This is copied from OracleSingleton!!
 
-        streamlines = list(streamlines)
         # Total number of predictions to return
         N = len(streamlines)
         # Placeholders for input and output data
@@ -398,11 +397,15 @@ class OracleBasedCritic(nn.Module):
         N_batch = len(batch)
         # Resample streamlines to fixed number of point to set all
         # sequences to same length
-        data = batch
-        # Compute streamline features as the directions between points
-        dirs = np.diff(data, axis=1)
+        with torch.no_grad():
+            if isinstance(batch, torch.Tensor):
+                data = batch
+            else:
+                data = torch.tensor(batch, dtype=torch.float32, device=self.device)
+            # Compute streamline features as the directions between points
+            dirs = torch.diff(data, dim=1)
         # Send the directions to pinned memory
-        placeholder[:N_batch] = torch.from_numpy(dirs)
+        placeholder[:N_batch] = dirs
         # Send the pinned memory to GPU asynchronously
         input_data = placeholder[:N_batch].to(
             self.device, non_blocking=True, dtype=torch.float)
@@ -479,7 +482,10 @@ class ActorCritic(PolicyGradient):
         if isinstance(self.critic, OracleBasedCritic):
             values = self.critic(streamlines).squeeze(-1)
         else:
-            values = self.critic(state).squeeze(-1)
+            values = self.critic(state)
+            if values.dim() > 1:
+                values = values.squeeze(-1)
+            
 
         return values, logp_pi, entropy
 
@@ -520,9 +526,9 @@ class ActorCritic(PolicyGradient):
         v, prob, entropy = self.evaluate(state, action, probabilistic, streamlines)
 
         return (
-            v.cpu().data.numpy(),
-            prob.cpu().data.numpy(),
-            entropy.cpu().data.numpy())
+            v,
+            prob,
+            entropy)
 
     def load_state_dict(self, state_dict):
         """ Load parameters into actor and critic

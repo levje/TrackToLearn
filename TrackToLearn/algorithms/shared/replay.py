@@ -2,6 +2,9 @@ import numpy as np
 import torch
 import scipy.signal
 from typing import Tuple
+#TrackToLearn.algorithms.shared.disc_cumsum
+from TrackToLearn.algorithms.shared.disc_cumsum import disc_cumsum
+
 
 from TrackToLearn.utils.torch_utils import get_device, get_device_str
 
@@ -435,31 +438,60 @@ class RlhfReplayBuffer(object):
         self.n_trajectories = n_trajectories
         self.max_traj_length = max_traj_length
         self.device = device
+        self.storing_device = 'cpu'
         self.gamma = gamma
         self.lmbda = lmbda
         self.state_dim = state_dim
         self.action_dim = action_dim
 
+        # # RL Buffers "filled with zeros"
+        # self.state = np.zeros((
+        #     self.n_trajectories, self.max_traj_length, self.state_dim))
+        # self.streamlines = np.zeros((
+        #     self.n_trajectories, self.max_traj_length, 128, 3))
+        # self.action = np.zeros((
+        #     self.n_trajectories, self.max_traj_length, self.action_dim))
+        # self.next_state = np.zeros((
+        #     self.n_trajectories, self.max_traj_length, self.state_dim))
+        # self.reward = np.zeros((self.n_trajectories, self.max_traj_length))
+        # self.not_done = np.zeros((self.n_trajectories, self.max_traj_length))
+        # self.values = np.zeros((self.n_trajectories, self.max_traj_length))
+        # self.next_values = np.zeros(
+        #     (self.n_trajectories, self.max_traj_length))
+        # self.probs = np.zeros((self.n_trajectories, self.max_traj_length))
+        # self.lens = np.zeros((self.n_trajectories,), dtype=np.int32)
+
+        # # # GAE buffers
+        # self.ret = np.zeros((self.n_trajectories, self.max_traj_length))
+        # self.adv = np.zeros((self.n_trajectories, self.max_traj_length))
+
         # RL Buffers "filled with zeros"
-        self.state = np.zeros((
-            self.n_trajectories, self.max_traj_length, self.state_dim))
-        self.streamlines = np.zeros((
-            self.n_trajectories, self.max_traj_length, 128, 3))
-        self.action = np.zeros((
-            self.n_trajectories, self.max_traj_length, self.action_dim))
-        self.next_state = np.zeros((
-            self.n_trajectories, self.max_traj_length, self.state_dim))
-        self.reward = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.not_done = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.values = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.next_values = np.zeros(
-            (self.n_trajectories, self.max_traj_length))
-        self.probs = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.lens = np.zeros((self.n_trajectories,), dtype=np.int32)
+        self.state = torch.zeros((self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.streamlines = torch.zeros((self.n_trajectories, self.max_traj_length, 128, 3), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.action = torch.zeros((self.n_trajectories, self.max_traj_length, self.action_dim), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.next_state = torch.zeros((self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.reward = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.not_done = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.values = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.next_values = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.probs = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.lens = torch.zeros((self.n_trajectories,), dtype=torch.int32, device=self.storing_device, requires_grad=False)
 
         # # GAE buffers
-        self.ret = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.adv = np.zeros((self.n_trajectories, self.max_traj_length))
+        self.ret = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.adv = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        
+        if get_device_str() == "cuda":
+            self.state = self.state.pin_memory()
+            self.streamlines = self.streamlines.pin_memory()
+            self.action = self.action.pin_memory()
+            self.next_state = self.next_state.pin_memory()
+            self.reward = self.reward.pin_memory()
+            self.not_done = self.not_done.pin_memory()
+            self.values = self.values.pin_memory()
+            self.next_values = self.next_values.pin_memory()
+            self.probs = self.probs.pin_memory()
+            self.lens = self.lens.pin_memory()
 
     def add(
         self,
@@ -555,8 +587,12 @@ class RlhfReplayBuffer(object):
                  x1 + discount * x2,
                  x2]
         """
-        return scipy.signal.lfilter(
-            [1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+        if isinstance(x, torch.Tensor):
+            return disc_cumsum(x, discount)
+        else:
+            return scipy.signal.lfilter(
+                [1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+            
 
     def sample(
         self,
@@ -597,38 +633,51 @@ class RlhfReplayBuffer(object):
              self.probs[row, col],
              self.values[row, col])
 
-        shuf_ind = np.arange(s.shape[0])
+        if get_device_str() == "cuda":
+            s = s.pin_memory()
+            st = st.pin_memory()
+            a = a.pin_memory()
+            ret = ret.pin_memory()
+            adv = adv.pin_memory()
+            probs = probs.pin_memory()
+            vals = vals.pin_memory()
 
+        # Essential for on-policy algorithms.
         self.clear_memory()
 
-        return (s[shuf_ind], st[shuf_ind], a[shuf_ind], ret[shuf_ind],
-                adv[shuf_ind], probs[shuf_ind], vals[shuf_ind])
+        return (s.to(device=self.device, non_blocking=True),
+                st.to(device=self.device, non_blocking=True),
+                a.to(device=self.device, non_blocking=True),
+                ret.to(device=self.device, non_blocking=True),
+                adv.to(device=self.device, non_blocking=True),
+                probs.to(device=self.device, non_blocking=True),
+                vals.to(device=self.device, non_blocking=True))
 
     def clear_memory(self):
         """ Reset the buffer
         """
 
-        self.lens = np.zeros((self.n_trajectories), dtype=np.int32)
+        self.lens = torch.zeros((self.n_trajectories), dtype=torch.int32)
         self.ptr = 0
 
         # RL Buffers "filled with zeros"
         # TODO: Is that actually needed ? Can't just set self.ptr to 0 ?
-        self.state = np.zeros((
-            self.n_trajectories, self.max_traj_length, self.state_dim))
-        self.action = np.zeros((
-            self.n_trajectories, self.max_traj_length, self.action_dim))
-        self.next_state = np.zeros((
-            self.n_trajectories, self.max_traj_length, self.state_dim))
-        self.reward = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.not_done = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.values = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.next_values = np.zeros(
-            (self.n_trajectories, self.max_traj_length))
-        self.probs = np.zeros((self.n_trajectories, self.max_traj_length))
+        self.state = torch.zeros((
+            self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32)
+        self.action = torch.zeros((
+            self.n_trajectories, self.max_traj_length, self.action_dim), dtype=torch.float32)
+        self.next_state = torch.zeros((
+            self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32)
+        self.reward = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.not_done = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.values = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.next_values = torch.zeros(
+            (self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.probs = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
 
         # GAE buffers
-        self.ret = np.zeros((self.n_trajectories, self.max_traj_length))
-        self.adv = np.zeros((self.n_trajectories, self.max_traj_length))
+        self.ret = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.adv = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
 
     def __len__(self):
         return np.sum(self.lens)
