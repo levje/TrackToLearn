@@ -3,7 +3,7 @@ import comet_ml  # noqa: F401 ugh
 import torch
 import os
 
-from TrackToLearn.trainers.rlhf_train import (
+from TrackToLearn.trainers.rlhf_refactored_train import (
     RlhfTrackToLearnTraining,
     parse_args)
 from TrackToLearn.utils.torch_utils import get_device, assert_accelerator
