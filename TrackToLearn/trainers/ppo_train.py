@@ -77,8 +77,7 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
         """
         self.hyperparameters.update(self.ppo_hparams.__dict__)
         self.hyperparameters.update({
-            "critic_architecture": self.critic_architecture.__name__,
-            "critic_checkpoint": self.critic_checkpoint,
+            "critic_architecture": self.critic_architecture.__name__
         })
 
         super().save_hyperparameters()
