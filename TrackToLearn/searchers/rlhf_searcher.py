@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import comet_ml  # noqa: F401 ugh
 import torch
+import os
 
 from TrackToLearn.trainers.rlhf_train import (
     RlhfTrackToLearnTraining,
@@ -18,22 +19,22 @@ def main():
 
     # We only need to specify the algorithm and hyperparameters to use:
     config = {
-        # We pick the Bayes algorithm:
-        "algorithm": "grid",
+        "algorithm": "bayes",
 
         # Declare your hyperparameters in the Vizier-inspired format:
         "parameters": {
             "lr": {
                 "type": "discrete",
-                "values": [5e-6, 1e-5, 5e-5, 1e-4, 5e-4]
+                "values": [1e-5]
             },
-            "oracle_bonus": {
-                "type": "discrete",
-                "values": [10.0, 50.0]},
-            # "alg": { # This can be used in the future to compare between PPO and SAC once PPO is working.
-            #     "type": "discrete",
-            #     "values": ["SACAuto", "PPO"]
-            # }
+            "init_critic_to_oracle": {
+                "type": "categorical",
+                "values": [0, 1]
+            },
+            "disable_oracle_training": {
+                "type": "categorical",
+                "values": [0, 1]
+            },
         },
 
         # Declare what we will be optimizing, and how:
@@ -56,12 +57,16 @@ def main():
         experiment.disabled = not args.use_comet
 
         lr = experiment.get_parameter("lr")
-        oracle_bonus = experiment.get_parameter("oracle_bonus")
+        is_critic_init_to_oracle = True if experiment.get_parameter("init_critic_to_oracle") > 0 else None
+        is_oracle_training_disabled = True if experiment.get_parameter("disable_oracle_training") > 0 else None
 
         arguments = vars(args)
+        path_suffix = f"lr_{str(lr).replace('.', '')}_Crit2Oracle_{is_critic_init_to_oracle}_OracleTrain_{not is_oracle_training_disabled}"
         arguments.update({
+            'path': os.path.join(args.path, path_suffix),
             'lr': lr,
-            'oracle_bonus': oracle_bonus,
+            'init_critic_to_oracle': is_critic_init_to_oracle,
+            'disable_oracle_training': is_oracle_training_disabled,
         })
 
         sac_experiment = RlhfTrackToLearnTraining(
