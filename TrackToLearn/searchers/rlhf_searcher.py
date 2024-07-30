@@ -26,19 +26,19 @@ def main():
         "parameters": {
             "lr": {
                 "type": "discrete",
-                "values": [1e-5]
+                "values": [1e-5, 1e-4, 1e-3]
             },
             "init_critic_to_oracle": {
                 "type": "discrete",
-                "values": [0, 1]
+                "values": [0]
             },
             "disable_oracle_training": {
                 "type": "discrete",
-                "values": [0, 1]
+                "values": [0]
             },
             "kl_penalty_coeff": {
                 "type": "discrete",
-                "values": [0.0, 0.02]
+                "values": [0.0]
             },
         },
 

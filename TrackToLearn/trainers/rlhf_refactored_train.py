@@ -10,6 +10,7 @@ import tempfile
 import h5py
 import lightning
 import comet_ml
+import json
 
 from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
@@ -18,6 +19,8 @@ from TrackToLearn.trainers.sac_auto_train import TrackToLearnTraining, add_sac_a
 from TrackToLearn.trainers.ppo_train import PPOTrackToLearnTraining, add_ppo_args
 from TrackToLearn.trainers.train import add_training_args
 from TrackToLearn.algorithms.rl import RLAlgorithm
+from TrackToLearn.algorithms.sac_auto import SACAuto
+from TrackToLearn.algorithms.ppo import PPO
 from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.tracking.tracker import Tracker
 from TrackToLearn.filterers.tractometer_filterer import TractometerFilterer
@@ -192,14 +195,7 @@ class RlhfRefactored(TrackToLearnTraining):
         else:
             # The agent is already pretrained, just need to fine-tune it.
             print("Skipping pretraining procedure: loading agent from checkpoint...", end=" ")
-            if isinstance(self.agent_trainer, PPOTrackToLearnTraining):
-                # This is needed, because PPO doesn't have the same critic as SAC.
-                # This means that we start the PPO training with a randomly initialized critic.
-                alg.agent.load_policy(self.agent_checkpoint_dir, 'last_model_state')
-            else:
-                alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
-
-            self.save_model(alg, save_model_dir=self.ref_model_dir)
+            self._load_agent_checkpoint(alg)
             print("Done.")
 
         self.agent_trainer.comet_monitor.e.add_tag("RLHF-start-ep-{}".format(current_ep))
@@ -258,8 +254,67 @@ class RlhfRefactored(TrackToLearnTraining):
 
             self.end_finetuning_epoch(i)
 
+    def _load_agent_checkpoint(self, alg: RLAlgorithm):
+        """
+        Load the agent checkpoint from which to start the RLHF fine-tuning process.
+        This function handles loading the hyperparameters dictionnary and loading the
+        model weights for the policy and/or the critic depending on the case.
+
+        Several technicalities are handled here to ease the experimentation process. Different
+        initialization strategies can be used depending on the algorithm used to pretrain and the
+        algorithm to fine-tune the agent here. If the pretrained agent is a SACAuto agent and the
+        fine-tuning algorithm is PPO, there's a difference between the architecture of the policy
+        and the critic. The SAC policy maximizes entropy and predicts it's own standard deviation
+        distribution while the PPO policy only predicts means (with independent std parameter).
+        
+        Here are the cases that are handled:
+
+        1. Pretrain with SAC and fine-tune with SAC.
+        2. Pretrain with SAC and fine-tune with PPO.
+            2.1 MaxEntropyActor policy + random critic initialization.
+                    In this case, the critic is randomly initialized and the PPO policy
+                    is a MaxEntropyActor which is loaded from the checkpoint. Although,
+                    having a MaxEntropyActor for PPO is not recommended, PPO usually has
+                    an independent standard deviation parameter.
+            2.2 MaxEntropyActor policy + critic initialized from reward model (with same architecture as reward model).
+                    In this case, the critic's architecture is different from what is used
+                    normally in our PPO implementation. The input of the critic is modified
+                    to match the reward model's input, meaning that the state inputted to the
+                    model is the current streamline (in other cases, the input state has the
+                    information about the N previous directions and the voxels neighboring the 
+                    tip of the streamline). Similarily to the previous case, having a MaxEntropyActor
+                    might not be the best choice to optimize with PPO. However, here the policy
+                    and the critic do not have the same input, which could be problematic.
+                    NB: This approach was suggested in the InstructGPT paper:
+                        (https://arxiv.org/abs/2203.02155)
+        3. Pretrain with PPO and fine-tune with PPO.
+
+        """
+        def load_hyperparameters(hparams_path):
+            with open(hparams_path, 'r') as f:
+                hparams = json.load(f)
+            return hparams
+
+        hparams = load_hyperparameters(os.path.join(self.agent_checkpoint_dir, 'hyperparameters.json'))
+        ckpt_algo = get_algorithm_cls(hparams['algorithm'])
+
+        if ckpt_algo == alg: # Same algorithm, same architecture.
+            alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+        elif ckpt_algo == SACAuto and isinstance(alg, PPO):
+            # This is needed, because PPO doesn't have the same critic as SAC.
+            # This means that we start the PPO training with a randomly initialized critic.
+
+            # Only load the policy.
+            # The critic will be initialized either:
+            # 1. Loaded from the checkpoint. This is done in the constructor of PPOActorCritic.
+            # 2. Randomly initialized.
+            alg.agent.load_policy(self.agent_checkpoint_dir, 'last_model_state')
+        else:
+            raise ValueError("Invalid combination of algorithms for RLHF training.")
+        
+        self.save_model(alg, save_model_dir=self.ref_model_dir)
+
     def train_reward(self):
-        """ Train the reward model using the dataset file. """
         """ Train the reward model using the dataset file. """
         dm = StreamlineDataModule(self.dataset_manager.dataset_file_path, batch_size=self.batch_size, num_workers=self.num_workers)
 
@@ -366,6 +421,17 @@ def get_trainer_cls_and_args(alg_name: str):
         raise ValueError(f'Invalid algorithm name: {alg_name}')
 
     return trainer_map[alg_name]
+
+def get_algorithm_cls(alg_name: str):
+    algorithm_map = {
+        'SACAuto': SACAuto,
+        'PPO': PPO,
+    }
+
+    if alg_name not in algorithm_map:
+        raise ValueError(f'Invalid algorithm name: {alg_name}')
+
+    return algorithm_map[alg_name]
 
 def parse_args():
     """ Train a RL tracking agent using RLHF with PPO. """

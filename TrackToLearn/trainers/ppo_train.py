@@ -104,9 +104,9 @@ def add_ppo_args(parser):
                         help='Entropy bonus coefficient')
     parser.add_argument('--action_std', default=0.0, type=float,
                         help='Standard deviation used of the action')
-    parser.add_argument('--lmbda', default=0.0, type=float,
+    parser.add_argument('--lmbda', default=0.95, type=float,
                         help='Lambda param for advantage discounting. 0.0 means no discounting, thus adv = R - V(s).')
-    parser.add_argument('--K_epochs', default=5, type=int,
+    parser.add_argument('--K_epochs', default=50, type=int,
                         help='Train the model for K epochs')
     parser.add_argument('--eps_clip', default=0.2, type=float,
                         help='Clipping parameter for PPO')

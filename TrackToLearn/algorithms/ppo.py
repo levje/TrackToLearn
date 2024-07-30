@@ -8,13 +8,13 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 
 from TrackToLearn.algorithms.rl import RLAlgorithm
-from TrackToLearn.algorithms.shared.onpolicy import PPOActorCritic, HybridMaxEntropyActor
+from TrackToLearn.algorithms.shared.onpolicy import PPOActorCritic, HybridMaxEntropyActor, Actor
 from TrackToLearn.algorithms.shared.replay import OnPolicyReplayBuffer, RlhfReplayBuffer
 from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.environments.utils import fix_streamlines_length
 from TrackToLearn.algorithms.shared.utils import (
     add_item_to_means, old_mean_losses)
-from TrackToLearn.utils.utils import TTLProfiler
+from TrackToLearn.utils.utils import TTLProfiler, break_if_found_nans, break_if_params_have_nans, break_if_grads_have_nans
 from time import time
 
 
@@ -42,6 +42,7 @@ class AdaptiveKLController:
 @dataclass
 class PPOHParams(object):
     algorithm: str = field(repr=True, init=False, default="PPO")
+
     reward_function_weighting: float = 10.0
 
     action_std: float = 0.0
@@ -144,7 +145,13 @@ class PPO(RLAlgorithm):
 
         # Initialize policy and reference (old) policy.
         self.agent = PPOActorCritic(
-            input_size, action_size, hidden_dims, device, action_std, critic_checkpoint
+            input_size,
+            action_size,
+            hidden_dims,
+            device,
+            action_std,
+            actor_cls=Actor,
+            critic_checkpoint=critic_checkpoint
         ).to(device)
         self.old_agent = deepcopy(self.agent.actor)
         _assert_same_weights(self.agent.actor, self.old_agent)
@@ -272,6 +279,14 @@ class PPO(RLAlgorithm):
                 assert logprob.size() == old_prob.size(), \
                     '{}, {}'.format(logprob.size(), old_prob.size())
                 ratio = torch.exp(logprob - old_prob)
+                if (torch.abs(ratio) > 1e10).any():
+                    indexes = (torch.abs(ratio) > 1e10).nonzero()
+                    breakpoint()
+                    print("Ratio is enormous")
+
+                break_if_found_nans(logprob)
+                break_if_found_nans(old_prob)
+                break_if_found_nans(ratio)
 
                 # Surrogate policy loss
                 assert ratio.size() == advantage.size(), \
@@ -281,27 +296,43 @@ class PPO(RLAlgorithm):
                 assert returns.size() == v.size(), \
                     '{}, {}'.format(returns.size(), v.size())
 
+                break_if_found_nans(advantage)
                 surrogate_policy_loss_1 = ratio * advantage
+                break_if_found_nans(surrogate_policy_loss_1) # REMOVE
                 surrogate_policy_loss_2 = torch.clamp(
                     ratio,
                     1-self.eps_clip,
                     1+self.eps_clip) * advantage
+                
+                if (torch.abs(surrogate_policy_loss_1) > 1e10).any():
+                    indexes = (torch.abs(surrogate_policy_loss_1) > 1e10).nonzero()
+                    breakpoint()
+                    print("Loss1 is enormous")
+                if (torch.abs(surrogate_policy_loss_2) > 1e10).any():
+                    indexes = (torch.abs(surrogate_policy_loss_2) > 1e10).nonzero()
+                    breakpoint()
+                    print("Loss2 is enormous")
+
+                break_if_found_nans(surrogate_policy_loss_2) # REMOVE
 
                 # PPO "pessimistic" policy loss
                 actor_loss = -(torch.min(
                     surrogate_policy_loss_1,
                     surrogate_policy_loss_2)).mean() + \
                     -self.entropy_loss_coeff * entropy.mean()
+                
+                break_if_found_nans(actor_loss) # REMOVE
 
                 # Clip value as in PPO's implementation:
                 # https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/ppo2/model.py#L68-L75
-                v_clipped = old_vals + torch.clamp(v - old_vals, -self.val_clip_coef, self.val_clip_coef)
+                # v_clipped = old_vals + torch.clamp(v - old_vals, -self.val_clip_coef, self.val_clip_coef)
+                # critic_loss_clipped = ((v_clipped - returns) ** 2).mean()
 
                 # AC Critic loss
                 critic_loss_unclipped = ((v - returns) ** 2).mean()
-                critic_loss_clipped = ((v_clipped - returns) ** 2).mean()
 
-                critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
+                # critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
+                critic_loss = critic_loss_unclipped
                 
                 def get_losses():
                     def get_critic_loss():
@@ -340,12 +371,21 @@ class PPO(RLAlgorithm):
                 running_losses = add_item_to_means(running_losses, losses)
 
                 self.optimizer.zero_grad()
+
+                break_if_found_nans(critic_loss) # REMOVE
+                break_if_found_nans(actor_loss) # REMOVE
+
                 ((critic_loss * 0.5) + actor_loss).backward()
+
+                break_if_grads_have_nans(self.agent.named_parameters())
 
                 # Gradient step
                 nn.utils.clip_grad_norm_(self.agent.parameters(),
                                          0.5)
                 self.optimizer.step()
+
+                # check if parameters of the policy become nan
+                break_if_params_have_nans(self.agent.parameters())
 
             pr.stop()
 
@@ -401,6 +441,7 @@ class PPO(RLAlgorithm):
 
             # Select action according to policy
             # Noise is already added by the policy
+            break_if_found_nans(state) # REMOVE
             with torch.no_grad():
                 action = self.agent.select_action(
                     state, probabilistic=1.0)
@@ -416,10 +457,9 @@ class PPO(RLAlgorithm):
                 probabilistic=1.0,
                 streamlines=resampled_streamlines)
 
-            _, ref_logprobs, _ = self.old_agent.forward(state, probabilistic=1.0)
-
             # Perform action
             next_state, next_streamlines, reward, done, info = env.step(action.to(device='cpu', copy=True).numpy())
+            break_if_found_nans(next_state) # REMOVE
             reward = torch.as_tensor(reward, dtype=torch.float32)
             running_reward_factors = add_item_to_means(
                 running_reward_factors, info['reward_info'])
@@ -434,6 +474,9 @@ class PPO(RLAlgorithm):
                 streamlines=resampled_next_streamlines)
 
             with torch.no_grad():
+                ref_pi = self.old_agent.forward(state, probabilistic=1.0)
+                ref_logprobs = ref_pi.log_prob(action).sum(axis=-1)
+                
                 log_ratio = (cur_logprobs - ref_logprobs).to('cpu')
                 running_mean_ratio += log_ratio.mean().item()
                 total_reward = reward - self.kl_penalty_ctrler.value \
@@ -461,6 +504,7 @@ class PPO(RLAlgorithm):
             # "Harvesting" here means removing "done" trajectories
             # from state as well as removing the associated streamlines
             state, streamlines, idx = env.harvest()
+            break_if_found_nans(state) # REMOVE
 
             indices = indices[idx]
 

@@ -4,6 +4,7 @@ import scipy.signal
 from typing import Tuple
 #TrackToLearn.algorithms.shared.disc_cumsum
 from TrackToLearn.algorithms.shared.disc_cumsum import disc_cumsum
+from TrackToLearn.utils.utils import break_if_found_nans, break_if_found_nans_args
 
 
 from TrackToLearn.utils.torch_utils import get_device, get_device_str
@@ -478,8 +479,8 @@ class RlhfReplayBuffer(object):
         self.lens = torch.zeros((self.n_trajectories,), dtype=torch.int32, device=self.storing_device, requires_grad=False)
 
         # # GAE buffers
-        self.ret = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
-        self.adv = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.ret = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device)
+        self.adv = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device)
         
         if get_device_str() == "cuda":
             self.state = self.state.pin_memory()
@@ -530,6 +531,9 @@ class RlhfReplayBuffer(object):
             Batch of "old" log-probs for this batch of transitions
 
         """
+
+        break_if_found_nans_args(state, streamlines, action, next_state, reward, done, values, next_values, probs)
+
         self.state[ind, self.ptr] = state
         self.streamlines[ind, self.ptr] = streamlines
         self.action[ind, self.ptr] = action
@@ -547,6 +551,7 @@ class RlhfReplayBuffer(object):
         self.lens[ind] += 1
 
         self._compute_adv_rets(ind, done)
+        break_if_found_nans_args(self.ret, self.adv)
 
         self.ptr += 1
 
@@ -657,30 +662,39 @@ class RlhfReplayBuffer(object):
         """ Reset the buffer
         """
 
-        self.lens = torch.zeros((self.n_trajectories), dtype=torch.int32)
         self.ptr = 0
 
         # RL Buffers "filled with zeros"
         # TODO: Is that actually needed ? Can't just set self.ptr to 0 ?
         self.state = torch.zeros((
-            self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32)
+            self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.streamlines = torch.zeros((
+            self.n_trajectories, self.max_traj_length, 128, 3), dtype=torch.float32, device=self.storing_device, requires_grad=False)
         self.action = torch.zeros((
-            self.n_trajectories, self.max_traj_length, self.action_dim), dtype=torch.float32)
+            self.n_trajectories, self.max_traj_length, self.action_dim), dtype=torch.float32, device=self.storing_device, requires_grad=False)
         self.next_state = torch.zeros((
-            self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32)
-        self.reward = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
-        self.not_done = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
-        self.values = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+            self.n_trajectories, self.max_traj_length, self.state_dim), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.reward = torch.zeros((
+            self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.not_done = torch.zeros((
+            self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.values = torch.zeros((
+            self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
         self.next_values = torch.zeros(
-            (self.n_trajectories, self.max_traj_length), dtype=torch.float32)
-        self.probs = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+            (self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.probs = torch.zeros((
+            self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device, requires_grad=False)
+        self.lens = torch.zeros((
+            self.n_trajectories), dtype=torch.int32, device=self.storing_device, requires_grad=False)
 
         # GAE buffers
-        self.ret = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
-        self.adv = torch.zeros((self.n_trajectories, self.max_traj_length), dtype=torch.float32)
+        self.ret = torch.zeros((
+            self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device)
+        self.adv = torch.zeros((
+            self.n_trajectories, self.max_traj_length), dtype=torch.float32, device=self.storing_device)
 
     def __len__(self):
-        return np.sum(self.lens)
+        return torch.sum(self.lens)
 
     def save_to_file(self, path):
         """ TODO for imitation learning

@@ -15,39 +15,35 @@ assert_accelerator()
 
 def main():
     """ Main tracking script """
-    config = sys.argv[-1]
-    new_args = sys.argv[1:-1]
-    print("config:", config)
-    print("new_args: ", new_args)
-    args = parse_args(new_args)
+    args = parse_args()
     from comet_ml import Optimizer
 
     # We only need to specify the algorithm and hyperparameters to use:
-    # config = {
-    #     # We pick the Bayes algorithm:
-    #     "algorithm": "grid",
+    config = {
+        # We pick the Bayes algorithm:
+        "algorithm": "grid",
 
-    #     # Declare your hyperparameters in the Vizier-inspired format:
-    #     "parameters": {
-    #         "lr": {
-    #             "type": "discrete",
-    #             "values": [1e-4, 1e-5, 1e-6] # [5e-6, 1e-5, 5e-5, 1e-4, 5e-4]
-    #         },
-    #         "gamma": {
-    #             "type": "discrete",
-    #             "values": [0.95, 0.5]
-    #         }
-    #     },
+        # Declare your hyperparameters in the Vizier-inspired format:
+        "parameters": {
+            "lr": {
+                "type": "discrete",
+                "values": [1e-5] # [5e-6, 1e-5, 5e-5, 1e-4, 5e-4]
+            },
+            "gamma": {
+                "type": "discrete",
+                "values": [0.5]
+            }
+        },
 
-    #     # Declare what we will be optimizing, and how:
-    #     "spec": {
-    #         "metric": "VC",
-    #         "objective": "maximize",
-    #         "seed": args.rng_seed,
-    #         "retryLimit": 3,
-    #         "retryAssignLimit": 3,
-    #     },
-    # }
+        # Declare what we will be optimizing, and how:
+        "spec": {
+            "metric": "VC",
+            "objective": "maximize",
+            "seed": args.rng_seed,
+            "retryLimit": 3,
+            "retryAssignLimit": 3,
+        },
+    }
 
     # Next, create an optimizer, passing in the config:
     opt = Optimizer(config)

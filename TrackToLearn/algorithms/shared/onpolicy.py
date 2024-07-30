@@ -12,6 +12,7 @@ from TrackToLearn.algorithms.shared.utils import (
     format_widths, make_fc_network)
 from TrackToLearn.oracles.transformer_oracle import TransformerOracle
 from TrackToLearn.utils.torch_utils import get_device_str, get_device
+from TrackToLearn.utils.utils import break_if_found_nans
 
 autocast_context = torch.cuda.amp.autocast if torch.cuda.is_available() else contextlib.nullcontext
 
@@ -93,8 +94,8 @@ class HybridMaxEntropyActor(nn.Module):
         pi_distribution = Normal(mu, std, validate_args=False)
         pre_pi_action = pi_distribution.rsample()
 
-        if torch.isnan(pre_pi_action.max()):
-            raise ValueError('Action is NaN')
+        break_if_found_nans(pre_pi_action) # REMOVE
+        
         # Trick from Spinning Up's implementation:
         # Compute logprob from Gaussian, and then apply correction for Tanh
         # squashing. NOTE: The correction formula is a little bit magic. To
@@ -160,7 +161,7 @@ class Actor(nn.Module):
 
         return dist
 
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
+    def forward(self, state: torch.Tensor, probabilistic: float = 1.0) -> torch.Tensor:
         """ Forward propagation of the actor.
         Outputs an un-noisy un-normalized action
         """
@@ -195,10 +196,14 @@ class PolicyGradient(nn.Module):
     ) -> torch.Tensor:
         """ Select noisy action according to actor
         """
-        action, logprob, entropy = self.actor.forward(state, probabilistic)
-        if torch.isnan(action.max()):
-            raise ValueError('Action is NaN')
-        return action, logprob, entropy
+        pi = self.actor.forward(state, probabilistic)
+        if probabilistic > 0.0:
+            action = pi.sample()
+        else:
+            action = pi.mean
+            
+        break_if_found_nans(action) # REMOVE
+        return action
 
     def evaluate(
         self, state: torch.Tensor, action: torch.Tensor, probabilistic: float
@@ -235,7 +240,7 @@ class PolicyGradient(nn.Module):
             state = state[None, :]
 
         state = torch.as_tensor(state, dtype=torch.float32, device=self.device)
-        action, _, _ = self.act(state, probabilistic)
+        action = self.act(state, probabilistic)
 
         return action
 
@@ -478,7 +483,10 @@ class ActorCritic(PolicyGradient):
         """ Get output of value function for the actions, as well as
         logprob of actions and entropy of policy for loss
         """
-        _, logp_pi, entropy = self.actor.forward(state, probabilistic)
+        pi = self.actor.forward(state, probabilistic)
+        # mu, std = pi.mean, pi.stddev
+        action_logprob = pi.log_prob(action).sum(axis=-1)
+        entropy = pi.entropy()
         if isinstance(self.critic, OracleBasedCritic):
             values = self.critic(streamlines)
         else:
@@ -487,7 +495,7 @@ class ActorCritic(PolicyGradient):
         if values.dim() > 1:
             values = values.squeeze(-1)
 
-        return values, logp_pi, entropy
+        return values, action_logprob, entropy
 
     def get_evaluation(
         self, state: np.array, action: np.array, probabilistic: float, streamlines: np.array = None
@@ -587,8 +595,21 @@ class ActorCritic(PolicyGradient):
         self.critic.train()
 
 class PPOActorCritic(ActorCritic):
-    def __init__(self, state_dim: int, action_dim: int, hidden_dims: str, device: torch.device, action_std: float = 0, critic_checkpoint: dict = None):
-        super().__init__(state_dim, action_dim, hidden_dims, device, action_std, actor_cls=HybridMaxEntropyActor, critic_checkpoint=critic_checkpoint)
+    def __init__(self,
+                 state_dim: int,
+                 action_dim: int,
+                 hidden_dims: str,
+                 device: torch.device,
+                 action_std: float = 0,
+                 actor_cls=HybridMaxEntropyActor,
+                 critic_checkpoint: dict = None):
+        super().__init__(state_dim,
+                         action_dim,
+                         hidden_dims,
+                         device,
+                         action_std,
+                         actor_cls=actor_cls,
+                         critic_checkpoint=critic_checkpoint)
 
     def load_policy(self, path: str, filename: str):
         self.actor.load_state_dict(

@@ -7,6 +7,7 @@ from os.path import join as pjoin
 from time import time
 import cProfile, pstats, io
 import numpy as np
+import torch
 
 COLOR_CODES = {
     'black': '\u001b[30m',
@@ -168,3 +169,50 @@ class TTLProfiler:
 
         if self.throw_at_stop:
             raise RuntimeError("Profiling stopped.")
+
+from typing import Iterable
+def break_if_grads_have_nans(named_params: Iterable):
+    for name, param in named_params:
+        if param.grad is not None and torch.isnan(param.grad).any():
+            breakpoint()
+            indexes = get_index_where_nans(param.grad)
+            print(f"Gradient of parameter {name} has NaNs.")
+            raise ValueError('Gradient has NaNs')
+        
+def break_if_params_have_nans(params: Iterable):
+    for p in params:
+        if torch.isnan(p).any():
+            breakpoint()
+            indexes = get_index_where_nans(p)
+            print("Parameter has NaNs.")
+            raise ValueError('Parameter has NaNs')
+        elif torch.isinf(p).any():
+            breakpoint()
+            indexes = torch.isinf(p).nonzero()
+            print("Parameter has Infs.")
+            raise ValueError('Parameter has Infs')
+
+def break_if_found_nans(t: torch.Tensor):
+    if isinstance(t, torch.Tensor) and torch.numel(t) != 0:
+        # Check if there's a NaN
+        if torch.isnan(t).any():
+            breakpoint()
+            indexes = get_index_where_nans(t)
+            print("Tensor has NaNs.")
+            raise ValueError('Tensor has NaNs')
+        # Check if there's any infinity
+        elif torch.isinf(t).any():
+            breakpoint()
+            indexes = torch.isinf(t).nonzero()
+            print("Tensor has Infs.")
+            raise ValueError('Tensor has Infs')
+        
+def break_if_found_nans_args(*args):
+    for arg in args:
+        break_if_found_nans(arg)
+
+def get_index_where_nans(t: torch.Tensor):
+    if torch.numel(t) != 0:
+        if torch.isnan(t.max()) or torch.isnan(t.min()):
+            return torch.isnan(t).nonzero()
+    return torch.tensor([], dtype=torch.int32)
