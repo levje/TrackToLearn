@@ -1,5 +1,5 @@
 import numpy as np
-
+import torch
 from scipy.ndimage import map_coordinates, spline_filter
 from typing import Tuple
 
@@ -72,6 +72,13 @@ class NoisyTrackingEnvironment(TrackingEnvironment):
             noise = ((1. - fa) * self.noise)
         else:
             noise = self.rng.normal(0., self.noise, size=directions.shape)
+
+        if isinstance(directions, torch.Tensor):
+            if directions.is_cuda:
+                directions = directions.cpu().numpy()
+            else:
+                directions = directions.numpy()
+
         directions = (
             directions + noise)
         return super().step(directions)

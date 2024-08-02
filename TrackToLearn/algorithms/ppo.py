@@ -6,6 +6,7 @@ from torch import nn
 from typing import Tuple
 from dataclasses import dataclass, field
 from copy import deepcopy
+from abc import abstractmethod
 
 from TrackToLearn.algorithms.rl import RLAlgorithm
 from TrackToLearn.algorithms.shared.onpolicy import PPOActorCritic, HybridMaxEntropyActor, Actor
@@ -20,16 +21,50 @@ from time import time
 
 # KL Controllers based on
 # https://github.com/openai/lm-human-preferences/blob/cbfd210bb8b08f6bc5c26878c10984b90f516c66/lm_human_preferences/train_policy.py#L107
-class FixedKLController:
+class RlhfKLController:
+    def __init__(self, kl_coef: float, mode_init: str = 'pretrain', pretrain_kl_coef: float = 0.0):
+        self._value = kl_coef
+        self._pretrain_kl_coef = pretrain_kl_coef
+        if mode_init == 'pretrain':
+            self.pretrain = True
+        elif mode_init == 'rlhf':
+            self.pretrain = False
+        else:
+            raise ValueError('invalid value for mode_init {}.'
+                             'Should be either "pretrain" or "rlhf"'.format(mode_init))
+
+    def pretrain_mode(self):
+        self.pretrain = True
+
+    def rlhf_mode(self):
+        self.pretrain = False    
+    
+    @property
+    def value(self):
+        if self.pretrain:
+            # potentially no KL penalty during pretraining
+            return self._pretrain_kl_coef
+        else:
+            return self._value
+        
+    @value.setter
+    def value(self, value):
+        self._value = value
+
+    @abstractmethod 
+    def update(self, current, n_steps):
+        raise NotImplementedError("KL Controller must implement update method")
+        
+class FixedKLController(RlhfKLController):
     def __init__(self, kl_coef):
-        self.value = kl_coef
+        super().__init__(kl_coef)
 
     def update(self, current, n_steps):
         pass
 
-class AdaptiveKLController:
+class AdaptiveKLController(RlhfKLController):
     def __init__(self, init_kl_coef, target, horizon):
-        self.value = init_kl_coef
+        super().__init__(init_kl_coef)
         self.target = target
         self.horizon = horizon
 
@@ -333,7 +368,24 @@ class PPO(RLAlgorithm):
 
                 # critic_loss = torch.mean(torch.maximum(critic_loss_clipped, critic_loss_unclipped))
                 critic_loss = critic_loss_unclipped
-                
+
+                self.optimizer.zero_grad()
+
+                break_if_found_nans(critic_loss) # REMOVE
+                break_if_found_nans(actor_loss) # REMOVE
+
+                ((critic_loss * 0.5) + actor_loss).backward()
+
+                break_if_grads_have_nans(self.agent.named_parameters())
+
+                # Gradient step
+                gradients = [param.grad.detach().flatten() for param in self.agent.parameters() if param.grad is not None]
+                nn.utils.clip_grad_norm_(self.agent.parameters(),
+                                         0.5)
+                clipped_gradients = [param.grad.detach().flatten() for param in self.agent.parameters() if param.grad is not None]
+                gradients_norm = torch.cat(gradients).norm()
+                clipped_gradients_norm = torch.cat(clipped_gradients).norm()
+
                 def get_losses():
                     def get_critic_loss():
                         return critic_loss.item()
@@ -364,24 +416,14 @@ class PPO(RLAlgorithm):
                         'entropy': get_entropy(),
                         'ret': get_ret(),
                         'v': get_v(),
+                        'gradients_norm': gradients_norm.item(),
+                        'clipped_gradients_norm': clipped_gradients_norm.item()
                     }
                     return losses
                 
                 losses = get_losses()
                 running_losses = add_item_to_means(running_losses, losses)
 
-                self.optimizer.zero_grad()
-
-                break_if_found_nans(critic_loss) # REMOVE
-                break_if_found_nans(actor_loss) # REMOVE
-
-                ((critic_loss * 0.5) + actor_loss).backward()
-
-                break_if_grads_have_nans(self.agent.named_parameters())
-
-                # Gradient step
-                nn.utils.clip_grad_norm_(self.agent.parameters(),
-                                         0.5)
                 self.optimizer.step()
 
                 # check if parameters of the policy become nan

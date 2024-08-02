@@ -185,6 +185,9 @@ class RlhfRefactored(TrackToLearnTraining):
 
         if self.agent_checkpoint_dir is None:
             # Start by pretraining the RL agent to get reasonable results.
+            if isinstance(alg, PPO):
+                alg.kl_penalty_ctrler.pretrain_mode() # TODO: Refactor
+
             self.agent_trainer.rl_train(alg,
                              env,
                              valid_env,
@@ -197,6 +200,9 @@ class RlhfRefactored(TrackToLearnTraining):
             print("Skipping pretraining procedure: loading agent from checkpoint...", end=" ")
             self._load_agent_checkpoint(alg)
             print("Done.")
+
+        if isinstance(alg, PPO):
+            alg.kl_penalty_ctrler.rlhf_mode() # TODO: Refactor
 
         self.agent_trainer.comet_monitor.e.add_tag("RLHF-start-ep-{}".format(current_ep))
 

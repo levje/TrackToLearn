@@ -26,7 +26,7 @@ def main():
         "parameters": {
             "lr": {
                 "type": "discrete",
-                "values": [1e-5, 1e-4, 1e-3]
+                "values": [1e-5]
             },
             "init_critic_to_oracle": {
                 "type": "discrete",
@@ -34,7 +34,7 @@ def main():
             },
             "disable_oracle_training": {
                 "type": "discrete",
-                "values": [0]
+                "values": [1]
             },
             "kl_penalty_coeff": {
                 "type": "discrete",

@@ -96,10 +96,10 @@ class PolicyGradient(nn.Module):
         """
         pi = self.actor.forward(state)
         # Should always be stochastic
-        if probabilistic > 0.0:
-            action = pi.sample()  # if stochastic else pi.mean
-        else:
-            action = pi.mean
+        # if probabilistic > 0.0:
+        action = pi.sample()  # if stochastic else pi.mean
+        # else:
+        #     action = pi.mean
 
         return action
 

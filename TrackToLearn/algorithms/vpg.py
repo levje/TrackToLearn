@@ -41,7 +41,7 @@ class VPG(RLAlgorithm):
         lr: float = 3e-4,
         gamma: float = 0.99,
         entropy_loss_coeff: float = 0.0001,
-        max_traj_length: int = 1,
+        max_traj_length: int = 5,
         n_actors: int = 4096,
         rng: np.random.RandomState = None,
         device: torch.device = get_device(),

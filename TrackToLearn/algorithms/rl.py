@@ -90,8 +90,12 @@ class RLAlgorithm(object):
             with torch.no_grad():
                 action = self.agent.select_action(state, probabilistic=prob)
             # Perform action
+            
+            if isinstance(action, torch.Tensor):
+                action = action.to(device='cpu', copy=True).numpy()
+
             next_state, _, reward, done, *_ = env.step(
-                action.to(device='cpu', copy=True).numpy())
+                action)
 
             # Keep track of reward
             running_reward += sum(reward)
