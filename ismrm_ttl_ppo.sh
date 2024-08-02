@@ -17,7 +17,7 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnPPO"
 COMETPROJECT="TrackToLearnPPO"
-EXPID="5-Search-AlignedWithArticle"_$(date +"%F-%H_%M_%S")
+EXPID="Classic_PPO_"_$(date +"%F-%H_%M_%S")
 # RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=1000              # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -28,7 +28,7 @@ NPV=2
 SEEDS=(1111)
 BATCHSIZE=4096
 GAMMA=0.5
-LR=0.005
+LR=0.00005
 THETA=30
 
 if [ $islocal -eq 1 ]; then
@@ -125,6 +125,7 @@ do
         --lmbda 0.95 \
         --eps_clip 0.2 \
         --K_epochs 30 \
+        --action_std 0.0 \
         "${additionnal_args[@]}"
 
 done
