@@ -120,7 +120,6 @@ class TrackToLearnTraining(Experiment):
 
         self.comet_monitor_was_setup = False
         self.reward_with_gt = train_dto['reward_with_gt']
-        self.use_a_tractometer = train_dto['use_a_tractometer']
         self.default_model_dir = 'model'
 
         # RNG
@@ -234,11 +233,11 @@ class TrackToLearnTraining(Experiment):
         # Setup validators, which will handle validation and scoring
         # of the generated streamlines
         self.validators = []
-        if self.tractometer_validator:
+        if self.tractometer_validator: # TODO: This is problematic if we call rl_train multiple times
             self.validators.append(TractometerValidator(
                 self.scoring_data, self.tractometer_reference,
                 dilate_endpoints=self.tractometer_dilate))
-        if self.oracle_validator:
+        if self.oracle_validator: # TODO: This is problematic if we call rl_train multiple times
             self.validators.append(OracleValidator(
                 self.oracle_checkpoint, self.device))
 

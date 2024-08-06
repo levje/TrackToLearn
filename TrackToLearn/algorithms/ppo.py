@@ -417,7 +417,8 @@ class PPO(RLAlgorithm):
                         'ret': get_ret(),
                         'v': get_v(),
                         'gradients_norm': gradients_norm.item(),
-                        'clipped_gradients_norm': clipped_gradients_norm.item()
+                        'clipped_gradients_norm': clipped_gradients_norm.item(),
+                        'kl_penalty': self.kl_penalty_ctrler.value
                     }
                     return losses
                 

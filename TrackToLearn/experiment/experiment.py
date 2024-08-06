@@ -129,7 +129,6 @@ class Experiment(object):
             'device': self.device,
             'target_sh_order': self.target_sh_order if hasattr(self, 'target_sh_order') else None,
             'reward_with_gt': self.reward_with_gt,
-            'use_a_tractometer': self.use_a_tractometer,
         }
 
         if noisy:
@@ -426,8 +425,6 @@ def add_reward_args(parser: ArgumentParser):
                         help='Alignment weighting for reward')
     parser.add_argument('--reward_with_gt', action='store_true', default=False,
                         help='Use the ground truth to compute the reward instead of the oracle.')
-    parser.add_argument('--use_a_tractometer', action='store_true', default=False,
-                        help='Use Antoine\'s tractometer to compute the reward.')
 
 
 def add_model_args(parser: ArgumentParser):
@@ -476,7 +473,7 @@ def add_tractometer_args(parser: ArgumentParser):
 def add_oracle_args(parser: ArgumentParser):
     oracle = parser.add_argument_group('Oracle')
     oracle.add_argument('--oracle_checkpoint', type=str,
-                        default='models/tractoracle.ckpt',
+                        default=None,
                         help='Checkpoint file (.ckpt) of the Oracle')
     oracle.add_argument('--oracle_validator', action='store_true',
                         help='Run a TractOracle model during validation to '

@@ -130,7 +130,6 @@ do
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --disable_oracle_training \
         --reward_with_gt \
-        --use_a_tractometer \
         "${additionnal_args[@]}"
 done
 
