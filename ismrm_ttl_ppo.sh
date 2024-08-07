@@ -47,7 +47,7 @@ if [ $islocal -eq 1 ]; then
         PYTHONEXEC=~/miniconda3/envs/$1/bin/python
     fi
     DATASETDIR=$DATADIR
-    ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    #ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -106,10 +106,7 @@ do
         --noise 0.0 \
         --alignment_weighting 1.0 \
         --binary_stopping_threshold 0.1 \
-        --oracle_checkpoint ${ORACLECHECKPOINT} \
-        --oracle_validator \
-        --oracle_stopping_criterion \
-        --oracle_bonus 10.0 \
+        --oracle_bonus 0.0 \
         --alignment_weighting 1.0 \
         --scoring_data "${DATASETDIR}/scoring_data" \
         --tractometer_reference "${DATASETDIR}/scoring_data/t1.nii.gz" \
