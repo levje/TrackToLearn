@@ -128,6 +128,17 @@ class TrackToLearnTraining(Experiment):
         self.rng = np.random.RandomState(seed=self.rng_seed)
         random.seed(self.rng_seed)
 
+        # Setup validators, which will handle validation and scoring
+        # of the generated streamlines
+        self.validators = []
+        if self.tractometer_validator: # TODO: This is problematic if we call rl_train multiple times
+            self.validators.append(TractometerValidator(
+                self.scoring_data, self.tractometer_reference,
+                dilate_endpoints=self.tractometer_dilate))
+        if self.oracle_validator: # TODO: This is problematic if we call rl_train multiple times
+            self.validators.append(OracleValidator(
+                self.oracle_checkpoint, self.device))
+
         self.hyperparameters = {
             # RL parameters
             # TODO: Make sure all parameters are logged
@@ -229,17 +240,6 @@ class TrackToLearnTraining(Experiment):
         valid_tracker = Tracker(
             alg, self.n_actor,
             prob=1.0, compress=0.0)
-
-        # Setup validators, which will handle validation and scoring
-        # of the generated streamlines
-        self.validators = []
-        if self.tractometer_validator: # TODO: This is problematic if we call rl_train multiple times
-            self.validators.append(TractometerValidator(
-                self.scoring_data, self.tractometer_reference,
-                dilate_endpoints=self.tractometer_dilate))
-        if self.oracle_validator: # TODO: This is problematic if we call rl_train multiple times
-            self.validators.append(OracleValidator(
-                self.oracle_checkpoint, self.device))
 
         # Run tracking before training to see what an untrained network does
         # valid_env.load_subject()
