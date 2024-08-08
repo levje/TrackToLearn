@@ -120,7 +120,7 @@ do
         --max_ep ${MAXEP} \
         --entropy_loss_coeff 0.001 \
         --lmbda 0.95 \
-        --eps_clip 0.2 \
+        --eps_clip 0.1 \
         --K_epochs 30 \
         --action_std 0.0 \
         --use_classic_reward \
