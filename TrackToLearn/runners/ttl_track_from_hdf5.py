@@ -69,6 +69,7 @@ class TrackToLearnValidation(Experiment):
         self.scoring_data = valid_dto['scoring_data']
 
         self.compute_reward = True
+        self.use_classic_reward = False
 
         self.fa_map = None
         if valid_dto['fa_map'] is not None:

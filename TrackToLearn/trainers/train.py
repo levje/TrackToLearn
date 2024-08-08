@@ -106,6 +106,7 @@ class TrackToLearnTraining(Experiment):
         self.scoring_data = train_dto['scoring_data']
 
         self.compute_reward = True  # Always compute reward during training
+        self.use_classic_reward = train_dto['use_classic_reward']
         self.fa_map = None
 
         # Various parameters
@@ -166,6 +167,7 @@ class TrackToLearnTraining(Experiment):
             'noise': self.noise,
             # Reward parameters
             'alignment_weighting': self.alignment_weighting,
+            'use_classic_reward': self.use_classic_reward,
             # Oracle parameters
             'oracle_bonus': self.oracle_bonus,
             'oracle_checkpoint': self.oracle_checkpoint,

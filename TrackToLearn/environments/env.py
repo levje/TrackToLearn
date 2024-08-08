@@ -128,6 +128,7 @@ class BaseEnv(object):
 
         # Reward parameters
         self.compute_reward = env_dto['compute_reward']
+        self.use_classic_reward = env_dto['use_classic_reward']
         # "Local" reward parameters
         self.alignment_weighting = env_dto['alignment_weighting']
         # "Sparse" reward parameters
@@ -268,7 +269,11 @@ class BaseEnv(object):
         # Reward function and reward factors
         if self.compute_reward:
             # Reward streamline according to alignment with local peaks
-            peaks_reward = PeaksAlignmentReward(self.peaks)
+            if self.use_classic_reward:
+                from TrackToLearn.environments.classic_reward import ClassicReward
+                peaks_reward = ClassicReward(self.peaks)
+            else:
+                peaks_reward = PeaksAlignmentReward(self.peaks)
             factors = [peaks_reward]
             weights = [self.alignment_weighting]
 

@@ -79,6 +79,7 @@ class TrackToLearnTrack(Experiment):
         self.scoring_data = None
 
         self.compute_reward = False
+        self.use_classic_reward = False
         self.render = False
         self.reward_with_gt = False
 

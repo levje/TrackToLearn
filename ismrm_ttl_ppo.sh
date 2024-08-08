@@ -17,7 +17,7 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnPPO"
 COMETPROJECT="TrackToLearnPPO"
-EXPID="Classic_PPO_"_$(date +"%F-%H_%M_%S")
+EXPID="Classic_PPO_ClassicReward_"_$(date +"%F-%H_%M_%S")
 # RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=1000              # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -123,6 +123,7 @@ do
         --eps_clip 0.2 \
         --K_epochs 30 \
         --action_std 0.0 \
+        --use_classic_reward \
         "${additionnal_args[@]}"
 
 done
