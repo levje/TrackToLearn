@@ -256,7 +256,8 @@ class TrackToLearnTraining(Experiment):
         #     filename = self.save_rasmm_tractogram(valid_tractogram,
         #                                           valid_env.subject_id,
         #                                           valid_env.affine_vox2rasmm,
-        #                                           valid_env.reference)
+        #                                           valid_env.reference,
+        #                                           save_dir=save_model_dir)
         #     scores = self.score_tractogram(filename, valid_env)
         #     print(scores)
 
@@ -386,7 +387,8 @@ class TrackToLearnTraining(Experiment):
         filename = self.save_rasmm_tractogram(valid_tractogram,
                                               valid_env.subject_id,
                                               valid_env.affine_vox2rasmm,
-                                              valid_env.reference)
+                                              valid_env.reference,
+                                              save_dir=save_model_dir)
         scores = self.score_tractogram(filename, valid_env)
         print(scores)
 

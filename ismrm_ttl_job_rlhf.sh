@@ -7,7 +7,6 @@
 #SBATCH --mail-type=ALL
 
 # The above comments are used by SLURM to set the job parameters.
-
 set -e
 
 # Set this to 0 if running on a cluster node.
@@ -134,6 +133,8 @@ do
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         # --pretrain_max_ep ${PRETRAINSTEPS} \
 
+    # POST-PROCESSING
+    bash scripts/tractogram_post_processing.sh ${DEST_FOLDER} ${DATASETDIR}
 done
 
 if [ $islocal -eq 1 ]; then
@@ -142,7 +143,7 @@ if [ $islocal -eq 1 ]; then
     echo "Done."
 else
     # Archive and save everything
-    OUTNAME=${EXPNAME}$(date +"%F").tar
+    OUTNAME=${EXPID}$(date -d "today" +"%Y%m%d%H%M").tar
 
     echo "Archiving experiment..."
     tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR $LOGSDIR

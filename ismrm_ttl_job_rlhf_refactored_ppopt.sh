@@ -7,7 +7,6 @@
 #SBATCH --mail-type=ALL
 
 # The above comments are used by SLURM to set the job parameters.
-
 set -e
 
 # Set this to 0 if running on a cluster node.
@@ -37,8 +36,8 @@ ENTROPY_LOSS_COEFF=0.0001 # Entropy bonus for policy loss
 ACTION_STD=0.0 # Std use for the action
 K_EPOCHS=30
 LAMBDA=0.95 # For advantage estimation
-POLICYCLIP=0.2
-VALUECLIP=0.2
+POLICYCLIP=0.1
+VALUECLIP=0.1
 KL_PENALTY_COEFF=0.02
 KL_TARGET=0.005
 KL_HORIZON=1000
@@ -171,6 +170,9 @@ do
         # --disable_oracle_training \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"
+
+    # POST-PROCESSING
+    bash scripts/tractogram_post_processing.sh ${DEST_FOLDER} ${DATASETDIR}
 done
 
 if [ $islocal -eq 1 ]; then
@@ -179,7 +181,7 @@ if [ $islocal -eq 1 ]; then
     echo "Done."
 else
     # Archive and save everything
-    OUTNAME=${EXPNAME}$(date +"%F").tar
+    OUTNAME=${EXPID}$(date -d "today" +"%Y%m%d%H%M").tar
 
     echo "Archiving experiment..."
     tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR $LOGSDIR

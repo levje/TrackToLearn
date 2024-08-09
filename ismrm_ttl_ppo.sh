@@ -7,7 +7,6 @@
 #SBATCH --mail-type=ALL
 
 # The above comments are used by SLURM to set the job parameters.
-
 set -e
 
 # Set this to 0 if running on a cluster node.
@@ -17,19 +16,20 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnPPO"
 COMETPROJECT="TrackToLearnPPO"
-EXPID="Classic_PPO_ClassicReward_"_$(date +"%F-%H_%M_%S")
+EXPID="Base_"_$(date +"%F-%H_%M_%S")
 # RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=1000              # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
 # AGENTNBSTEPS=100        # Number of steps for the agent
 # PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
-NPV=2
+NPV=20
 SEEDS=(1111)
 BATCHSIZE=4096
 GAMMA=0.5
 LR=0.00005
 THETA=30
+POLICYCLIP=0.1
 
 if [ $islocal -eq 1 ]; then
     # This script should be ran from the root of the project is ran locally.
@@ -90,7 +90,6 @@ do
     # fi
 
     # Start training
-    # Start training
     ${PYTHONEXEC} \
         $SOURCEDIR/TrackToLearn/trainers/classic_ppo_train.py \
         ${DEST_FOLDER} \
@@ -120,12 +119,14 @@ do
         --max_ep ${MAXEP} \
         --entropy_loss_coeff 0.001 \
         --lmbda 0.95 \
-        --eps_clip 0.1 \
+        --eps_clip ${POLICYCLIP} \
         --K_epochs 30 \
         --action_std 0.0 \
-        --use_classic_reward \
         "${additionnal_args[@]}"
+        # --use_classic_reward \
 
+    # POST-PROCESSING
+    bash scripts/tractogram_post_processing.sh ${DEST_FOLDER} ${DATASETDIR}
 done
 
 if [ $islocal -eq 1 ]; then
@@ -134,10 +135,10 @@ if [ $islocal -eq 1 ]; then
     echo "Done."
 else
     # Archive and save everything
-    OUTNAME=${EXPNAME}$(date +"%F").tar
+    OUTNAME=${EXPID}$(date -d "today" +"%Y%m%d%H%M").tar
 
     echo "Archiving experiment..."
-    tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR $LOGSDIR
+    tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR
     echo "Copying archive to scratch..."
     cp ${DATADIR}/${OUTNAME} ~/scratch/${OUTNAME}
 fi
