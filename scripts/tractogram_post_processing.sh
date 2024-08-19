@@ -24,6 +24,23 @@ else
     fi
 fi
 
+# Depending on the version of scilpy,
+# the scoring script was renamed after the 2.0.2 release.
+if command -v scil_tractogram_segment_and_score.py &> /dev/null
+then
+    # With scilpy <= 2.0.2
+    SCORING_SCRIPT="scil_tractogram_segment_and_score.py"
+elif command -v scil_tractogram_segment_with_ROI_and_score.py &> /dev/null
+then
+    # With scilpy > 2.0.2
+    SCORING_SCRIPT="scil_tractogram_segment_with_ROI_and_score.py"
+else
+    echo "There are no scilpy scoring scripts available on PATH."
+    exit 1
+fi
+
+echo "Using the ${SCORING_SCRIPT} script."
+
 # Create a folder to store the post-processed tractograms
 mkdir -p ${DEST_FOLDER}/postproc
 
