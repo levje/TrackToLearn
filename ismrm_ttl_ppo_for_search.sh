@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=40000M
-#SBATCH --time=20:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=16000M
+#SBATCH --time=15:00:00
 #SBATCH --mail-user=jeremi.levesque@usherbrooke.ca
 #SBATCH --mail-type=ALL
 
@@ -46,7 +46,7 @@ if [ $islocal -eq 1 ]; then
         PYTHONEXEC=python
         echo "WARNING: No conda environment provided. Using the environment loaded when calling the script."
     else
-        PYTHONEXEC=~/miniconda3/envs/$1/bin/python
+        PYTHONEXEC=python # ~/miniconda3/envs/$1/bin/python
     fi
     DATASETDIR=$DATADIR
     #ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt

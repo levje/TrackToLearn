@@ -32,9 +32,10 @@ accept_all=0
 for lr in "${lrs[@]}"; do
     for gamma in "${gammas[@]}"; do
         for clip in "${clips[@]}"; do
-            # If be_safe is set to 1, ask the user to confirm the launch of the job.
-            if [[ $be_safe -eq 1 ]]; then
-                read -p "Launch job with lr=${lr}, gamma=${gamma}, clip=${clip}? [y/n] " -n 1 -r
+            # If be_safe is set to 1 and accept_all is set to 1,
+            # ask the user to confirm the launch of the job.
+            if [[ $be_safe -eq 1 && $accept_all -eq 0 ]]; then
+                read -p "Launch job with lr=${lr}, gamma=${gamma}, clip=${clip}? [y/n/a] " -n 1 -r
                 echo
                 
                 if [[ $REPLY =~ ^[Aa]$ ]]; then
