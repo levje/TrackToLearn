@@ -72,7 +72,7 @@ do
 
     # Only score if there are streamlines left, but nb_streamlines is a string
     if [ $nb_streamlines -gt 0 ]; then
-        scil_tractogram_segment_and_score.py \
+        ${SCORING_SCRIPT} \
             ${output_folder}/${tractogram_post} \
             ${DATASETDIR}/scoring_data/scil_scoring_config.json \
             ${output_folder}/scores \
