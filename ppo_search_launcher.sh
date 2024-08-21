@@ -35,12 +35,15 @@ for lr in "${lrs[@]}"; do
             # If be_safe is set to 1 and accept_all is set to 1,
             # ask the user to confirm the launch of the job.
             if [[ $be_safe -eq 1 && $accept_all -eq 0 ]]; then
-                read -p "Launch job with lr=${lr}, gamma=${gamma}, clip=${clip}? [y/n/a] " -n 1 -r
+                read -p "Launch job with lr=${lr}, gamma=${gamma}, clip=${clip}? [y/n/a/s] " -n 1 -r
                 echo
                 
                 if [[ $REPLY =~ ^[Aa]$ ]]; then
                     echo "Launching all jobs."
                     accept_all=1
+                elif [[ $REPLY =~ ^[Ss]$ ]]; then
+                    echo "Skipping job with lr=${lr}, gamma=${gamma}, clip=${clip}."
+                    continue
                 elif [[ ! $REPLY =~ ^[Yy]$ ]]; then
                     echo "Job not launched."
                     exit 1
