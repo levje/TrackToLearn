@@ -21,7 +21,7 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="ClassicPPO-Oracle-Search"
 COMETPROJECT="ClassicPPO-Oracle-Search"
-EXPID="Base_wOracle_"_$(date +"%F-%H_%M_%S")
+EXPID="${SLURM_JOB_ID}_withOracle_"_$(date +"%F-%H_%M_%S")
 # RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=1000                # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -106,7 +106,10 @@ do
         --max_length 200 \
         --noise 0.0 \
         --binary_stopping_threshold 0.1 \
-        --oracle_bonus 0.0 \
+        --oracle_checkpoint ${ORACLECHECKPOINT} \
+        --oracle_validator \
+        --oracle_stopping_criterion \
+        --oracle_bonus 10.0 \
         --alignment_weighting 1.0 \
         --scoring_data "${DATASETDIR}/scoring_data" \
         --tractometer_reference "${DATASETDIR}/scoring_data/t1.nii.gz" \
@@ -136,7 +139,7 @@ if [ $islocal -eq 1 ]; then
     echo "Done."
 else
     # Archive and save everything
-    OUTNAME=${EXPID}$(date -d "today" +"%Y%m%d%H%M").tar
+    OUTNAME=${EXPID}_$(date -d "today" +"%H%M").tar
 
     echo "Archiving experiment..."
     tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR

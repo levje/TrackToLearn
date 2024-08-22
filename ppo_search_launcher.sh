@@ -2,8 +2,8 @@
 be_safe=1   # Set to 1 to avoid launching jobs by mistake. Set at 0 at your own risk of
             # launching a lot of jobs.
 
-lrs=(0.00001 0.00005 0.0005)
-gammas=(0.5 0.75 0.90 0.95)
+lrs=(0.00001 0.00005)
+gammas=(0.75 0.95)
 clips=(0.1)
 
 # Count the number of process to launch
