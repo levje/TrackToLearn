@@ -15,11 +15,11 @@ islocal=1
 # Expriment parameters
 EXPNAME="TrackToLearn"
 COMETPROJECT="TrackToLearn"
-EXPID="AntoineOracle-Masked-1mm-Dataset"_$(date +"%F-%H_%M_%S")
+EXPID="SAC-WithOracle-"_$(date +"%F-%H_%M_%S")
 MAXEP=1000
 BATCHSIZE=4096
 SEEDS=(1111)
-NPV=4
+NPV=20
 GAMMA=0.95
 LR=0.0005
 THETA=30
@@ -28,36 +28,52 @@ if [ $islocal -eq 1 ]; then
     # This script should be ran from the root of the project is ran locally.
     echo "Running training locally..."
     SOURCEDIR=.
-    DATADIR=data/datasets/ismrm2015
+    DATADIR=data/datasets/ismrm2015_2mm
     EXPDIR=data/experiments
     LOGSDIR=data/logs
 
-    ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    RUN_OFFLINE=0
+    # If CONDAENV is not set, PYTHON EXEC should be python, else it should be the python executable of the conda environment.
+    if [ -z $1 ]; then
+        PYTHONEXEC=python
+        echo "WARNING: No conda environment provided. Using the environment loaded when calling the script."
+    else
+        PYTHONEXEC=~/miniconda3/envs/$1/bin/python
+    fi
+    DATASETDIR=$DATADIR
+    ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
+    AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
+    # ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
 else
     echo "Running training on a cluster node..."
-    module load python/3.10 cuda cudnn
+    module load python/3.10 cuda cudnn httpproxy
     SOURCEDIR=~/TrackToLearn
     DATADIR=$SLURM_TMPDIR/data
     EXPDIR=$SLURM_TMPDIR/experiments
     LOGSDIR=$SLURM_TMPDIR/logs
-    
+    PYTHONEXEC=python
+    export COMET_API_KEY=$(cat ~/.comet_api_key)
+
     ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
-    RUN_OFFLINE=1
 
     # Prepare virtualenv
     echo "Sourcing ENV-TTL-2 virtual environment..."
     source ~/ENV-TTL-2/bin/activate # Ideally, we would build the environnement within the node itself, but too much dependencies for now.
 
     # Prepare datasets
-    mkdir $DATADIR
-    mkdir $EXPDIR
+    mkdir -p $DATADIR
+    mkdir -p $EXPDIR
 
     echo "Unpacking datasets..."
-    tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015/ismrm_ttl_dataset.tar -C $DATADIR
+    tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
+    DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
     cp ~/projects/def-pmjodoin/levj1404/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    
+    echo "Copying agent checkpoint..."
+    cp ~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/* $DATADIR
+    AGENTCHECKPOINT=~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13
 fi
 
 for RNGSEED in "${SEEDS[@]}"
@@ -69,20 +85,22 @@ do
         additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
     fi
 
+    # --oracle_checkpoint ${ORACLECHECKPOINT} \
+    # --oracle_validator \
+    # --oracle_stopping_criterion \
+    # --oracle_bonus 10.0 \
+
     # Start training
     python -O $SOURCEDIR/TrackToLearn/trainers/sac_auto_train.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
-        "${DATADIR}/ismrm2015_fp_masked.hdf5" \
+        "${DATASETDIR}/ismrm2015.hdf5" \
         --max_ep ${MAXEP} \
         --hidden_dims "1024-1024-1024" \
-        --oracle_checkpoint ${ORACLECHECKPOINT} \
-        --oracle_validator \
-        --oracle_stopping_criterion \
-        --oracle_bonus 10.0 \
-        --scoring_data "${DATADIR}/scoring_data" \
-        --tractometer_reference "${DATADIR}/scoring_data/t1.nii.gz" \
+        --oracle_bonus 0.0 \
+        --scoring_data "${DATASETDIR}/scoring_data" \
+        --tractometer_reference "${DATASETDIR}/scoring_data/t1.nii.gz" \
         --tractometer_validator \
         --use_comet \
         --workspace "mrzarfir" \

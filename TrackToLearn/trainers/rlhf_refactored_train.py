@@ -36,6 +36,12 @@ This is adapted from the rlhf_train.py script. The main difference is that
 this class doesn't inherit from SACAuto's trainer. 
 """
 
+def check_if_file_already_opened(file_path: str):
+    """ Check if the file is already opened. """
+    with h5py.File(file_path, 'a') as f:
+        print("checking if file is already opened")
+        return
+
 class RlhfRefactored(TrackToLearnTraining):
     
     def __init__(
@@ -248,7 +254,9 @@ class RlhfRefactored(TrackToLearnTraining):
                     self.dataset_manager.add_tractograms_to_dataset(filtered_tractograms)
 
                     # Train reward model
+                    check_if_file_already_opened(self.dataset_manager.dataset_file_path)
                     self.train_reward()
+                    check_if_file_already_opened(self.dataset_manager.dataset_file_path)
 
             # Train the RL agent
             self.agent_trainer.rl_train(alg,
@@ -324,8 +332,9 @@ class RlhfRefactored(TrackToLearnTraining):
 
     def train_reward(self):
         """ Train the reward model using the dataset file. """
+        # check_if_file_already_opened(self.dataset_manager.dataset_file_path)
         dm = StreamlineDataModule(self.dataset_manager.dataset_file_path, batch_size=self.batch_size, num_workers=self.num_workers)
-
+        # check_if_file_already_opened(self.dataset_manager.dataset_file_path)
         dm.setup('fit')
 
         # TODO: To avoid using weird combination of CombinedLoader, we can also try to wrap
@@ -352,6 +361,7 @@ class RlhfRefactored(TrackToLearnTraining):
         self.combined_train_loader.flattened = [[]]
         self.combined_val_loader.flattened = [[]]
         self.combined_test_loader.flattened = [[]]
+        # check_if_file_already_opened(self.dataset_manager.dataset_file_path)
 
     def generate_and_save_tractograms(self, tracker: Tracker, env: BaseEnv, save_dir: str):
         tractogram, _ = tracker.track_and_validate(self.tracker_env) # TODO: Change to only track().

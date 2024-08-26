@@ -10,18 +10,19 @@
 set -e
 
 # SEARCH PARAMETERS
-LR=$1
-GAMMA=$2
-POLICYCLIP=$3
+
+LR=$2
+GAMMA=$3
+POLICYCLIP=$4
 
 # Set this to 0 if running on a cluster node.
 islocal=1
 RUN_OFFLINE=0
 
 # Expriment parameters
-EXPNAME="ClassicPPO-Oracle-Search"
-COMETPROJECT="ClassicPPO-Oracle-Search"
-EXPID="${SLURM_JOB_ID}_withOracle_"_$(date +"%F-%H_%M_%S")
+EXPNAME="ClassicPPO-TractometerRw-Search"
+COMETPROJECT="ClassicPPO-TractometerRw-Search"
+EXPID="${SLURM_JOB_ID}_TractometerRw_"_$(date +"%F-%H_%M_%S")
 # RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=1000                # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
@@ -46,7 +47,7 @@ if [ $islocal -eq 1 ]; then
         PYTHONEXEC=python
         echo "WARNING: No conda environment provided. Using the environment loaded when calling the script."
     else
-        PYTHONEXEC=python # ~/miniconda3/envs/$1/bin/python
+        PYTHONEXEC=~/miniconda3/envs/$1/bin/python
     fi
     DATASETDIR=$DATADIR
     #ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
@@ -106,9 +107,6 @@ do
         --max_length 200 \
         --noise 0.0 \
         --binary_stopping_threshold 0.1 \
-        --oracle_checkpoint ${ORACLECHECKPOINT} \
-        --oracle_validator \
-        --oracle_stopping_criterion \
         --oracle_bonus 10.0 \
         --alignment_weighting 1.0 \
         --scoring_data "${DATASETDIR}/scoring_data" \
@@ -126,6 +124,7 @@ do
         --eps_clip ${POLICYCLIP} \
         --K_epochs 30 \
         --action_std 0.0 \
+        --reward_with_gt \
         "${additionnal_args[@]}"
         # --use_classic_reward \
 

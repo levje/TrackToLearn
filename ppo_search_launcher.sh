@@ -52,7 +52,7 @@ for lr in "${lrs[@]}"; do
                 echo "${job_id}/${n_jobs} => Queuing job with lr=${lr}, gamma=${gamma}, clip=${clip}."
             fi
 
-            sbatch ismrm_ttl_ppo_for_search.sh $lr $gamma $clip
+            qc bash ismrm_ttl_ppo_for_search.sh rltrack $lr $gamma $clip
             job_id=$((job_id+1))
         done
     done

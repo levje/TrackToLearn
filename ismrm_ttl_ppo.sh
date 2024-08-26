@@ -16,9 +16,9 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnPPO"
 COMETPROJECT="TrackToLearnPPO"
-EXPID="Base_"_$(date +"%F-%H_%M_%S")
+EXPID="testing_Base_"_$(date +"%F-%H_%M_%S")
 # RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
-MAXEP=1000              # Number of PPO iterations
+MAXEP=100                # Number of PPO iterations
 # ORACLENBSTEPS=10        # Number of steps for the oracle
 # AGENTNBSTEPS=100        # Number of steps for the agent
 # PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
@@ -26,8 +26,8 @@ MAXEP=1000              # Number of PPO iterations
 NPV=20
 SEEDS=(1111)
 BATCHSIZE=4096
-GAMMA=0.5
-LR=0.00005
+GAMMA=0.95
+LR=0.0005
 THETA=30
 POLICYCLIP=0.1
 
@@ -103,7 +103,6 @@ do
         --min_length 20 \
         --max_length 200 \
         --noise 0.0 \
-        --alignment_weighting 1.0 \
         --binary_stopping_threshold 0.1 \
         --oracle_bonus 0.0 \
         --alignment_weighting 1.0 \

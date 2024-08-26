@@ -2,7 +2,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40000M
-#SBATCH --time=2-00:00:00
+#SBATCH --time=0-40:00:00
 #SBATCH --mail-user=jeremi.levesque@usherbrooke.ca
 #SBATCH --mail-type=ALL
 
@@ -14,35 +14,35 @@ islocal=1
 RUN_OFFLINE=0
 
 # Expriment parameters
-EXPNAME="TrackToLearnRLHF-PPO-Search"
-COMETPROJECT="TrackToLearnRLHF-PPO-Search"
-EXPID="RLHFPPO_Search_"_$(date +"%F-%H_%M_%S")
+EXPNAME="TrackToLearnRLHF"
+COMETPROJECT="TrackToLearnRLHF"
+EXPID="DEBUG_RLHFPPO_"_$(date +"%F-%H_%M_%S")
 ALG="PPO" #"SACAuto"
-RLHFINTERNPV=20         # Number of seeds per tractogram generated during the RLHF pipeline
+RLHFINTERNPV=30         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
-ORACLENBSTEPS=5         # Number of steps for the oracle
+ORACLENBSTEPS=4         # Number of steps for the oracle
 AGENTNBSTEPS=100        # Number of steps for the agent
 PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
-NPV=8 # Number of points per tractogram for training
+NPV=20 # Number of points per tractogram for training
 SEEDS=(1111)
 BATCHSIZE=4096
 GAMMA=0.5 # Reward discounting (could also be 0.95)
-LR=0.00001 # 1e-5
+LR=0.00005 # 1e-5
 THETA=30
 
 # PPO hparams
 ENTROPY_LOSS_COEFF=0.0001 # Entropy bonus for policy loss
 ACTION_STD=0.0 # Std use for the action
 K_EPOCHS=30
-LAMBDA=0.95 # For advantage estimation
-POLICYCLIP=0.2
-VALUECLIP=0.2
-KL_PENALTY_COEFF=0.0 # 0.02
+LAMBDA=0.5 # For advantage estimation
+POLICYCLIP=0.1
+VALUECLIP=0.1
+KL_PENALTY_COEFF=0.02
 KL_TARGET=0.005
 KL_HORIZON=1000
 ADAPTIVE_KL=0 # Set to 1 to use adaptive KL
-INIT_CRITIC_TO_ORACLE=1 # Set to 1 to initialize the critic to the oracle
+INIT_CRITIC_TO_ORACLE=0 # Set to 1 to initialize the critic to the oracle
 
 
 if [ $islocal -eq 1 ]; then
@@ -61,8 +61,10 @@ if [ $islocal -eq 1 ]; then
         PYTHONEXEC=~/miniconda3/envs/$1/bin/python
     fi
     DATASETDIR=$DATADIR
-    ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
+    ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
+    AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
+    # ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -130,7 +132,7 @@ do
     fi
 
     # Start training
-    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/searchers/rlhf_searcher.py \
+    ${PYTHONEXEC} -O $SOURCEDIR/TrackToLearn/trainers/rlhf_refactored_train.py \
         ${DEST_FOLDER} \
         "${COMETPROJECT}" \
         "${EXPID}" \
@@ -164,9 +166,9 @@ do
         --oracle_train_steps ${ORACLENBSTEPS} \
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
-        --disable_oracle_training \
         --alg ${ALG} \
         "${additionnal_args[@]}"
+        # --disable_oracle_training \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"
 
