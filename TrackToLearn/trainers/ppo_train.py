@@ -3,6 +3,7 @@ import argparse
 from argparse import RawTextHelpFormatter
 
 import comet_ml  # noqa: F401 ugh
+import warnings
 import torch
 from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
@@ -51,8 +52,14 @@ class PPOTrackToLearnTraining(TrackToLearnTraining):
         self.kl_target = ppo_train_dto['kl_target']
         self.kl_horizon = ppo_train_dto['kl_horizon']
 
-        self.critic_checkpoint = torch.load(ppo_train_dto['oracle_checkpoint'], map_location=get_device()) \
-            if ppo_train_dto['init_critic_to_oracle'] and ppo_train_dto['oracle_checkpoint'] else None
+        self.critic_checkpoint = None
+        if ppo_train_dto['init_critic_to_oracle']:
+            if self.oracle_checkpoint:
+                self.critic_checkpoint = torch.load(ppo_train_dto['oracle_checkpoint'],\
+                                                    map_location=get_device())
+            else:
+                warnings.warn("No oracle checkpoint provided, but init_critic_to_oracle is set to True.\n"
+                              "Critic will be initialized randomly.")
         self.critic_architecture = OracleBasedCritic if self.critic_checkpoint is not None else Critic
 
         self.ppo_hparams = PPOHParams(

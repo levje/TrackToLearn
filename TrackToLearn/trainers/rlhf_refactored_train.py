@@ -305,7 +305,7 @@ class RlhfRefactored(TrackToLearnTraining):
         hparams = load_hyperparameters(os.path.join(self.agent_checkpoint_dir, 'hyperparameters.json'))
         ckpt_algo = get_algorithm_cls(hparams['algorithm'])
 
-        if ckpt_algo == alg: # Same algorithm, same architecture.
+        if isinstance(alg, ckpt_algo): # Same algorithm, same architecture.
             alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
         elif ckpt_algo == SACAuto and isinstance(alg, PPO):
             # This is needed, because PPO doesn't have the same critic as SAC.
@@ -317,7 +317,8 @@ class RlhfRefactored(TrackToLearnTraining):
             # 2. Randomly initialized.
             alg.agent.load_policy(self.agent_checkpoint_dir, 'last_model_state')
         else:
-            raise ValueError("Invalid combination of algorithms for RLHF training.")
+            raise ValueError("Invalid combination of algorithms for RLHF training. Got {} and {}."
+                             .format(ckpt_algo.__name__, alg.__class__.__name__))
         
         self.save_model(alg, save_model_dir=self.ref_model_dir)
 
@@ -340,12 +341,13 @@ class RlhfRefactored(TrackToLearnTraining):
             self.comet_logger._experiment_key = self.experiment_key
 
         self.oracle_trainer.fit(self.oracle.model, train_dataloaders=self.combined_train_loader, val_dataloaders=self.combined_val_loader)
+        self.oracle.model.to(self.device) # Lightning AI moves the model automatically to the CPU, we have to move it back...
         self.oracle_next_train_steps = self.oracle_train_steps
         self.experiment_key = self.comet_logger.experiment.get_key()
 
         dm.setup('test')
         self.combined_test_loader.flattened = [dm.test_dataloader()]
-        self.oracle_trainer.test(self.oracle.model, dataloaders=self.combined_test_loader)
+        # self.oracle_trainer.test(self.oracle.model, dataloaders=self.combined_test_loader)
 
         self.combined_train_loader.flattened = [[]]
         self.combined_val_loader.flattened = [[]]
