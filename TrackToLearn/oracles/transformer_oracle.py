@@ -1,11 +1,33 @@
 import math
 import torch
 
-import lightning as L
 from torch import nn, Tensor
 from torchmetrics.regression import (MeanSquaredError, MeanAbsoluteError)
 from torchmetrics.classification import (BinaryRecall, BinaryPrecision, BinaryAccuracy, BinaryROC,
                                          BinarySpecificity, BinaryF1Score)
+
+class LightningLikeModule(nn.Module):
+    def __init__(self):
+        super(LightningLikeModule, self).__init__()
+    
+    def configure_optimizers(self):
+        raise NotImplementedError()
+
+    @torch.autocast(device_type='cuda')
+    def forward():
+        raise NotImplementedError()
+
+    def load_from_checkpoint():
+        raise NotImplementedError()
+
+    def training_step():
+        raise NotImplementedError()
+
+    def validation_step():
+        raise NotImplementedError()
+
+    def test_step():
+        raise NotImplementedError()
 
 class PositionalEncoding(nn.Module):
     """ From
@@ -37,8 +59,7 @@ class PositionalEncoding(nn.Module):
         x = x.permute(1, 0, 2)
         return x
 
-
-class TransformerOracle(L.LightningModule):
+class TransformerOracle(LightningLikeModule):
 
     def __init__(
             self,
@@ -96,9 +117,10 @@ class TransformerOracle(L.LightningModule):
         self.f1 = BinaryF1Score()
 
         # Save the hyperparameters to the checkpoint
-        self.save_hyperparameters()
+        # self.save_hyperparameters()
 
-    def configure_optimizers(self):
+    def configure_optimizers(self, trainer):
+        self.trainer = trainer
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer, T_max=self.trainer.max_epochs
@@ -112,6 +134,7 @@ class TransformerOracle(L.LightningModule):
             }
         }
 
+    @torch.autocast(device_type='cuda')
     def forward(self, x):
         if len(x.shape) > 3:
             x = x.squeeze(0)
@@ -162,14 +185,17 @@ class TransformerOracle(L.LightningModule):
         y_int = torch.round(y)
 
         # Compute & log the metrics
-        self.log('ORACLE_train_loss',      loss, on_step=True, on_epoch=False)
-        self.log('ORACLE_train_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
-        self.log('ORACLE_train_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_train_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_train_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_train_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
-        self.log('ORACLE_train_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
-        return loss
+        info = {
+            'train_loss':       loss,
+            'train_acc':        self.accuracy(y_hat, y_int),
+            'train_recall':     self.recall(y_hat, y_int),
+            'train_spec':       self.spec(y_hat, y_int),
+            'train_precision':  self.precision(y_hat, y_int),
+            'train_mse':        self.mse(y_hat, y),
+            'train_mae':        self.mae(y_hat, y)
+        }
+        
+        return loss, info
 
     def validation_step(self, val_batch, batch_idx):
         x, y = val_batch
@@ -182,14 +208,18 @@ class TransformerOracle(L.LightningModule):
         y_int = torch.round(y)
 
         # Compute & log the metrics
-        self.log('ORACLE_val_loss',      loss, on_step=True, on_epoch=False)
-        self.log('ORACLE_val_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
-        self.log('ORACLE_val_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_val_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_val_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_val_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
-        self.log('ORACLE_val_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
-        self.log('ORACLE_val_f1',        self.f1(y_hat, y), on_step=True, on_epoch=False)       
+        info = {
+            'val_loss',      loss,
+            'val_acc',       self.accuracy(y_hat, y_int),
+            'val_recall',    self.recall(y_hat, y_int),
+            'val_spec',      self.spec(y_hat, y_int),
+            'val_precision', self.precision(y_hat, y_int),
+            'val_mse',       self.mse(y_hat, y),
+            'val_mae',       self.mae(y_hat, y),
+            'val_f1',        self.f1(y_hat, y),       
+        }
+
+        return loss, info
 
     def test_step(self, test_batch, batch_idx):
         x, y = test_batch
@@ -202,16 +232,15 @@ class TransformerOracle(L.LightningModule):
         y_int = torch.round(y)
 
         # Compute & log the metrics
-        self.log('ORACLE_test_loss',      loss, on_step=True, on_epoch=False)
-        self.log('ORACLE_test_acc',       self.accuracy(y_hat, y_int), on_step=True, on_epoch=False, prog_bar=True)
-        self.log('ORACLE_test_recall',    self.recall(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_test_spec',      self.spec(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_test_precision', self.precision(y_hat, y_int), on_step=True, on_epoch=False)
-        self.log('ORACLE_test_mse',       self.mse(y_hat, y), on_step=True, on_epoch=False)
-        self.log('ORACLE_test_mae',       self.mae(y_hat, y), on_step=True, on_epoch=False)
-        self.log('ORACLE_test_f1',        self.f1(y_hat, y), on_step=True, on_epoch=False)
-        self.roc.update(y_hat, y_int.int())
-
-    def on_test_epoch_end(self):
-        # TODO: Not implemented.
-        return super().on_test_epoch_end()
+        info = {
+            'test_loss',      loss,
+            'test_acc',       self.accuracy(y_hat, y_int),
+            'test_recall',    self.recall(y_hat, y_int),
+            'test_spec',      self.spec(y_hat, y_int),
+            'test_precision', self.precision(y_hat, y_int),
+            'test_mse',       self.mse(y_hat, y),
+            'test_mae',       self.mae(y_hat, y),
+            'test_f1',        self.f1(y_hat, y),
+        }
+        # self.roc.update(y_hat, y_int.int())
+        return loss, info

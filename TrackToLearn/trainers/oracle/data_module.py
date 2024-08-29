@@ -1,5 +1,4 @@
 import numpy as np
-import lightning.pytorch as pl
 import torch
 from torch.utils.data import (
     BatchSampler, DataLoader, SequentialSampler, Subset, Sampler)
@@ -7,7 +6,7 @@ from TrackToLearn.trainers.oracle.StreamlineBatchDataset import StreamlineBatchD
 from TrackToLearn.utils.torch_utils import get_device_str
 
 
-class StreamlineDataModule(pl.LightningDataModule):
+class StreamlineDataModule(object):
     """ Data module for the streamline dataset. This module is used to
     load the data and create the dataloaders for the training, validation
     and test sets.

@@ -1,19 +1,12 @@
 import os
 import argparse
-import lightning.pytorch
-import lightning.pytorch.callbacks
-import lightning.pytorch.loggers
-import lightning.pytorch.trainer
-import lightning.pytorch.utilities
 import numpy as np
 import tempfile
 import h5py
-import lightning
 import comet_ml
 import json
 
 from comet_ml import Experiment as CometExperiment
-from comet_ml import OfflineExperiment as CometOfflineExperiment
 
 from TrackToLearn.trainers.sac_auto_train import TrackToLearnTraining, add_sac_auto_args, SACAutoTrackToLearnTraining
 from TrackToLearn.trainers.ppo_train import PPOTrackToLearnTraining, add_ppo_args
@@ -25,16 +18,12 @@ from TrackToLearn.environments.env import BaseEnv
 from TrackToLearn.tracking.tracker import Tracker
 from TrackToLearn.filterers.tractometer_filterer import TractometerFilterer
 from TrackToLearn.oracles.oracle import OracleSingleton
+from TrackToLearn.trainers.oracle.oracle_trainer import OracleTrainer
 from TrackToLearn.trainers.oracle.data_module import StreamlineDataModule
 from TrackToLearn.trainers.oracle.streamline_dataset_manager import StreamlineDatasetManager
 from TrackToLearn.utils.torch_utils import assert_accelerator, get_device_str
 
 assert_accelerator()
-
-"""
-This is adapted from the rlhf_train.py script. The main difference is that
-this class doesn't inherit from SACAuto's trainer. 
-"""
 
 def check_if_file_already_opened(file_path: str):
     """ Check if the file is already opened. """
@@ -48,7 +37,8 @@ class RlhfRefactored(TrackToLearnTraining):
         self,
         rlhf_train_dto: dict,
         trainer_cls: TrackToLearnTraining,
-        agent_experiment: CometExperiment = None
+        agent_experiment: CometExperiment = None,
+        oracle_experiment: CometExperiment = None
         ):
         super().__init__(
             rlhf_train_dto
@@ -62,6 +52,10 @@ class RlhfRefactored(TrackToLearnTraining):
         if not os.path.exists(self.ref_model_dir):
             os.makedirs(self.ref_model_dir)
 
+        self.oracle_training_dir = os.path.join(self.experiment_path, "oracle")
+        if not os.path.exists(self.oracle_training_dir):
+            os.makedirs(self.oracle_training_dir)
+
         assert self.pretrain_max_ep is not None or self.agent_checkpoint_dir is not None, \
             "Either pretrain_max_ep or agent_checkpoint must be provided for RLHF training."
         
@@ -74,20 +68,11 @@ class RlhfRefactored(TrackToLearnTraining):
 
         ################################################
         # Start by initializing the agent trainer.     #
-        offline = rlhf_train_dto['comet_offline_dir'] is not None
-
         if agent_experiment is None:
-            if offline:
-                agent_experiment = CometOfflineExperiment(project_name=self.experiment,
-                                            workspace=rlhf_train_dto['workspace'], parse_args=False,
-                                            auto_metric_logging=False,
-                                            disabled=not self.use_comet,
-                                            offline_directory=self.comet_offline_dir)
-            else:
-                agent_experiment = CometExperiment(project_name=self.experiment,
-                                            workspace=rlhf_train_dto['workspace'], parse_args=False,
-                                            auto_metric_logging=False,
-                                            disabled=not self.use_comet)
+            agent_experiment = CometExperiment(project_name=self.experiment,
+                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                        auto_metric_logging=False,
+                                        disabled=not self.use_comet)
 
             agent_experiment.set_name(self.name)
 
@@ -97,43 +82,38 @@ class RlhfRefactored(TrackToLearnTraining):
         
         ################################################
         # Continue by initializing the oracle trainer. #
-        dataset_to_augment = rlhf_train_dto.get('dataset_to_augment', None)
-        self.dataset_manager = StreamlineDatasetManager(saving_path=self.model_dir,
-                                                        dataset_to_augment_path=dataset_to_augment)
-
         comet_ml.config.set_global_experiment(None) # Need this to avoid erasing the RL agent's experiment
                                                     # when creating a new one.
-        
-        self.comet_logger = lightning.pytorch.loggers.CometLogger(
-            save_dir=self.comet_offline_dir,
-            offline=self.comet_offline_dir is not None,
-            project_name="TractOracleRLHF",
-            experiment_name='-'.join([self.experiment, self.name]),
-        )
+        if oracle_experiment is None:
+            oracle_experiment = CometExperiment(project_name="TractOracleRLHF",
+                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                        auto_metric_logging=False,
+                                        disabled=not self.use_comet)
 
-        self.lr_monitor = lightning.pytorch.callbacks.LearningRateMonitor(logging_interval='step')
+            oracle_experiment_id = '-'.join([self.experiment, self.name])
+
+        dataset_to_augment = rlhf_train_dto.get('dataset_to_augment', None)
+        self.dataset_manager = StreamlineDatasetManager(saving_path=self.oracle_training_dir,
+                                                        dataset_to_augment_path=dataset_to_augment)
+
+        # self.lr_monitor = lightning.pytorch.callbacks.LearningRateMonitor(logging_interval='step')
         self.oracle_next_train_steps = 0 # Since we are leveraging the same trainer, we need to add
                                          # this value to the oracle trainer across different runs.
         
-        self.oracle_checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
-            dirpath=self.model_dir,
-        )
-        self.oracle_trainer = lightning.pytorch.trainer.Trainer(
-            logger=self.comet_logger,
-            log_every_n_steps=1,
-            num_sanity_val_steps=0,
-            max_epochs=self.oracle_train_steps,
-            enable_checkpointing=True,
-            default_root_dir=self.experiment_path,
-            precision='16-mixed',
-            callbacks=[self.lr_monitor, self.oracle_checkpoint_callback],
-            accelerator=get_device_str(),
-            devices=1
-        )
+        # self.oracle_checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
+        #     dirpath=self.model_dir,
+        # )
 
-        self.combined_train_loader = lightning.pytorch.utilities.CombinedLoader([])
-        self.combined_val_loader = lightning.pytorch.utilities.CombinedLoader([])
-        self.combined_test_loader = lightning.pytorch.utilities.CombinedLoader([])
+        self.oracle_trainer = OracleTrainer(
+
+            oracle_experiment,
+            oracle_experiment_id,
+            self.oracle_training_dir,
+            self.max_ep,
+            enable_checkpointing=True,
+            val_interval=1,
+            device=self.device
+        )
 
         # Update the hyperparameters
         self.hyperparameters.update(
@@ -269,6 +249,20 @@ class RlhfRefactored(TrackToLearnTraining):
 
             self.end_finetuning_epoch(i)
 
+    def train_reward(self):
+        """ Train the reward model using the dataset file. """
+        dm = StreamlineDataModule(self.dataset_manager.dataset_file_path,
+                                  batch_size=self.batch_size,
+                                  num_workers=self.num_workers)
+        dm.setup('fit')
+        self.oracle_trainer.fit_iter(self.oracle.model,
+                                     train_dataloader=dm.train_dataloader(),
+                                     val_dataloader=dm.val_dataloader())
+
+        dm.setup('test')
+        self.oracle_trainer.test(self.oracle.model,
+                                 dataloaders=self.combined_test_loader)
+
     def _load_agent_checkpoint(self, alg: RLAlgorithm):
         """
         Load the agent checkpoint from which to start the RLHF fine-tuning process.
@@ -329,39 +323,6 @@ class RlhfRefactored(TrackToLearnTraining):
                              .format(ckpt_algo.__name__, alg.__class__.__name__))
         
         self.save_model(alg, save_model_dir=self.ref_model_dir)
-
-    def train_reward(self):
-        """ Train the reward model using the dataset file. """
-        # check_if_file_already_opened(self.dataset_manager.dataset_file_path)
-        dm = StreamlineDataModule(self.dataset_manager.dataset_file_path, batch_size=self.batch_size, num_workers=self.num_workers)
-        # check_if_file_already_opened(self.dataset_manager.dataset_file_path)
-        dm.setup('fit')
-
-        # TODO: To avoid using weird combination of CombinedLoader, we can also try to wrap
-        # the datamodule to be able to swap it and destroy it dynamically?
-        self.combined_train_loader.flattened = [dm.train_dataloader()]
-        self.combined_val_loader.flattened = [dm.val_dataloader()]
-
-        # Not sure if it's the best way to iteratively train the oracle, but
-        # using https://github.com/Lightning-AI/pytorch-lightning/issues/11425
-        # to call fit multiple times.
-        self.oracle_trainer.fit_loop.max_epochs += self.oracle_next_train_steps # On first iteration, we add 0.
-        if hasattr(self, 'experiment_key'):
-            self.comet_logger._experiment_key = self.experiment_key
-
-        self.oracle_trainer.fit(self.oracle.model, train_dataloaders=self.combined_train_loader, val_dataloaders=self.combined_val_loader)
-        self.oracle.model.to(self.device) # Lightning AI moves the model automatically to the CPU, we have to move it back...
-        self.oracle_next_train_steps = self.oracle_train_steps
-        self.experiment_key = self.comet_logger.experiment.get_key()
-
-        dm.setup('test')
-        self.combined_test_loader.flattened = [dm.test_dataloader()]
-        # self.oracle_trainer.test(self.oracle.model, dataloaders=self.combined_test_loader)
-
-        self.combined_train_loader.flattened = [[]]
-        self.combined_val_loader.flattened = [[]]
-        self.combined_test_loader.flattened = [[]]
-        # check_if_file_already_opened(self.dataset_manager.dataset_file_path)
 
     def generate_and_save_tractograms(self, tracker: Tracker, env: BaseEnv, save_dir: str):
         tractogram, _ = tracker.track_and_validate(self.tracker_env) # TODO: Change to only track().
