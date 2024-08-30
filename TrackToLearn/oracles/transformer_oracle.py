@@ -68,7 +68,8 @@ class TransformerOracle(LightningLikeModule):
             n_head,
             n_layers,
             lr,
-            loss=nn.MSELoss
+            loss=nn.MSELoss,
+            mixed_precision=True
     ):
         super(TransformerOracle, self).__init__()
 
@@ -77,6 +78,7 @@ class TransformerOracle(LightningLikeModule):
         self.lr = lr
         self.n_head = n_head
         self.n_layers = n_layers
+        self.enable_amp = mixed_precision
 
         self.embedding_size = 32
 
@@ -125,16 +127,17 @@ class TransformerOracle(LightningLikeModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer, T_max=self.trainer.max_epochs
         )
+        scaler = torch.cuda.amp.GradScaler(enabled=self.enable_amp)
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "interval": "step"
-            }
+            },
+            "scaler": scaler
         }
 
-    @torch.autocast(device_type='cuda')
     def forward(self, x):
         if len(x.shape) > 3:
             x = x.squeeze(0)
@@ -180,20 +183,23 @@ class TransformerOracle(LightningLikeModule):
         if len(x.shape) > 3:
             x, y = x.squeeze(0), y.squeeze(0)
 
-        y_hat = self(x)
-        loss = self.loss(y_hat, y)
+        with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.enable_amp):
+            y_hat = self(x)
+            loss = self.loss(y_hat, y)
+
         y_int = torch.round(y)
 
-        # Compute & log the metrics
-        info = {
-            'train_loss':       loss,
-            'train_acc':        self.accuracy(y_hat, y_int),
-            'train_recall':     self.recall(y_hat, y_int),
-            'train_spec':       self.spec(y_hat, y_int),
-            'train_precision':  self.precision(y_hat, y_int),
-            'train_mse':        self.mse(y_hat, y),
-            'train_mae':        self.mae(y_hat, y)
-        }
+        with torch.no_grad():
+            # Compute & log the metrics
+            info = {
+                'train_loss':       loss.detach(),
+                'train_acc':        self.accuracy(y_hat, y_int),
+                'train_recall':     self.recall(y_hat, y_int),
+                'train_spec':       self.spec(y_hat, y_int),
+                'train_precision':  self.precision(y_hat, y_int),
+                'train_mse':        self.mse(y_hat, y),
+                'train_mae':        self.mae(y_hat, y)
+            }
         
         return loss, info
 
@@ -203,21 +209,23 @@ class TransformerOracle(LightningLikeModule):
         if len(x.shape) > 3:
             x, y = x.squeeze(0), y.squeeze(0)
 
-        y_hat = self(x)
-        loss = self.loss(y_hat, y)
-        y_int = torch.round(y)
+        with torch.no_grad():
+            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.enable_amp):
+                y_hat = self(x)
+                loss = self.loss(y_hat, y)
+                y_int = torch.round(y)
 
-        # Compute & log the metrics
-        info = {
-            'val_loss',      loss,
-            'val_acc',       self.accuracy(y_hat, y_int),
-            'val_recall',    self.recall(y_hat, y_int),
-            'val_spec',      self.spec(y_hat, y_int),
-            'val_precision', self.precision(y_hat, y_int),
-            'val_mse',       self.mse(y_hat, y),
-            'val_mae',       self.mae(y_hat, y),
-            'val_f1',        self.f1(y_hat, y),       
-        }
+            # Compute & log the metrics
+            info = {
+                'val_loss':      loss,
+                'val_acc':       self.accuracy(y_hat, y_int),
+                'val_recall':    self.recall(y_hat, y_int),
+                'val_spec':      self.spec(y_hat, y_int),
+                'val_precision': self.precision(y_hat, y_int),
+                'val_mse':       self.mse(y_hat, y),
+                'val_mae':       self.mae(y_hat, y),
+                'val_f1':        self.f1(y_hat, y),       
+            }
 
         return loss, info
 
@@ -227,20 +235,22 @@ class TransformerOracle(LightningLikeModule):
         if len(x.shape) > 3:
             x, y = x.squeeze(0), y.squeeze(0)
 
-        y_hat = self(x)
-        loss = self.loss(y_hat, y)
-        y_int = torch.round(y)
+        with torch.no_grad():
+            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.enable_amp):
+                y_hat = self(x)
+                loss = self.loss(y_hat, y)
+                y_int = torch.round(y)
 
-        # Compute & log the metrics
-        info = {
-            'test_loss',      loss,
-            'test_acc',       self.accuracy(y_hat, y_int),
-            'test_recall',    self.recall(y_hat, y_int),
-            'test_spec',      self.spec(y_hat, y_int),
-            'test_precision', self.precision(y_hat, y_int),
-            'test_mse',       self.mse(y_hat, y),
-            'test_mae',       self.mae(y_hat, y),
-            'test_f1',        self.f1(y_hat, y),
-        }
+            # Compute & log the metrics
+            info = {
+                'test_loss':      loss,
+                'test_acc':       self.accuracy(y_hat, y_int),
+                'test_recall':    self.recall(y_hat, y_int),
+                'test_spec':      self.spec(y_hat, y_int),
+                'test_precision': self.precision(y_hat, y_int),
+                'test_mse':       self.mse(y_hat, y),
+                'test_mae':       self.mae(y_hat, y),
+                'test_f1':        self.f1(y_hat, y),
+            }
         # self.roc.update(y_hat, y_int.int())
         return loss, info

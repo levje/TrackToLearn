@@ -79,7 +79,7 @@ class StreamlineDataModule(object):
         """
         sampler = BatchSampler(WeakShuffleSampler(
             self.streamline_train, self.batch_size), self.batch_size,
-            drop_last=True)
+            drop_last=False)
 
         return DataLoader(
             self.streamline_train,
@@ -91,7 +91,7 @@ class StreamlineDataModule(object):
         """
         sampler = BatchSampler(SequentialSampler(
             self.streamline_val), self.batch_size,
-            drop_last=True)
+            drop_last=False)
         return DataLoader(
             self.streamline_val,
             sampler=sampler,

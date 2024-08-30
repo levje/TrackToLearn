@@ -63,49 +63,84 @@ class OracleTrainer(object):
             use_comet=use_comet
         )
 
+    def setup_model_training(self, oracle_model: LightningLikeModule):
+        """
+        This method must be called before calling fit_iter().
+
+        It is used to configure the optimizer, the scheduler and the scaler.
+        Contrary to the standard fit() method from Lightning AI that takes the model
+        as an argument, we want to be able to call fit() multiple times with a coherent
+        configuration of the optimizer, the scheduler and the scaler to train the same
+        model.
+        """
+        self.oracle_model = oracle_model
+        self._reset_optimizers()
+
+    def _verify_model_was_setup(self):
+        if not hasattr(self, 'oracle_model') or self.oracle_model is None:
+            raise ValueError("You must call setup_model_training before calling fit_iter.\n"
+                             "This makes sure the model is properly setup for training, by \n"
+                             "configuring the optimizer, the scheduler and the scaler.")
+        
+    def _reset_optimizers(self):
+        optim_info = self.oracle_model.configure_optimizers(self)
+        self.optimizer = optim_info['optimizer']
+        self.scheduler = optim_info['lr_scheduler']['scheduler']
+        self.scaler = optim_info['scaler']
+
     def fit_iter(
         self,
-        oracle_model: LightningLikeModule,
         train_dataloader,
-        val_dataloader
+        val_dataloader,
+        reset_optimizers=False
     ):
-        
-        # TODO: Implement learning rate monitoring
-        # TODO: Implement checkpointing
-        # TODO: Implement logging
-        oracle_model.train() # Set model to training mode
+        """
+        This method trains the model for a given number of epochs.
+        Contrary to the standard fit() method, this method is made
+        to be called multiple times with the same model. This is
+        especially useful when training a model iteratively.
 
-        optim_info = oracle_model.configure_optimizers(self)
-        # oracle_model = oracle_model.to(self.device)
+        Args:
+            train_dataloader: The training dataloader
+            val_dataloader: The validation dataloader
+            reset_optimizers: If True, the optimizer, the scheduler and the scaler
+                are reset before training the model instead of reusing the same
+                optimizer, scheduler and scaler as well as their last respective
+                states.
+        """
+        self._verify_model_was_setup()
 
-        optimizer = optim_info['optimizer']
-        scheduler = optim_info['lr_scheduler']['scheduler']
+        self.oracle_model.train() # Set model to training mode
+        self.oracle_model = self.oracle_model.to(self.device)
 
-        best_VC = 0
+        if reset_optimizers:
+            self._reset_optimizers()
+
+        best_acc = 0
         for epoch in range(self.max_epochs):
             self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_START)
 
-            train_metrics = {}
+            train_metrics = defaultdict(list)
             for i, batch in enumerate(train_dataloader):
-                batch = to_device(batch, self.device)
-
-                # Call hooks _on_train_batch_start
                 self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_START)
 
+                batch = to_device(batch, self.device)
+
                 # Train step
-                loss, train_info = oracle_model.training_step(batch, i)
-                train_metrics = add_item_to_means(train_metrics, train_info)
-                train_metrics['lr'] = optimizer.param_groups[0]['lr']
+                loss, train_info = self.oracle_model.training_step(batch, i)
+                add_item_to_means(train_metrics, train_info)
+                train_metrics['lr'].append(torch.tensor(self.optimizer.param_groups[0]['lr']))
 
                 # Clear gradients
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
 
                 # Backward pass
-                loss.backward()
+                self.scaler.scale(loss).backward()
 
                 # Update parameters
-                optimizer.step()
-                scheduler.step()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.scheduler.step()
 
                 self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_END)
             train_metrics = mean_losses(train_metrics)
@@ -113,14 +148,14 @@ class OracleTrainer(object):
             self.oracle_monitor.log_metrics(train_metrics, epoch)
 
             if epoch % self.val_interval == 0:
-                val_metrics = {}
+                val_metrics = defaultdict(list)
                 for i, batch in enumerate(val_dataloader):
                     batch = to_device(batch, self.device)
                     self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_START)
 
                     # TODO: Implement validation step
-                    _, val_info = oracle_model.validation_step(batch, i)
-                    val_metrics = add_item_to_means(val_metrics, val_info)
+                    _, val_info = self.oracle_model.validation_step(batch, i)
+                    add_item_to_means(val_metrics, val_info)
 
                     self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_END)
                 
@@ -132,38 +167,39 @@ class OracleTrainer(object):
                     checkpoint_dict = {
                         'epoch': epoch,
                         'metrics': val_metrics,
-                        'model_state_dict': oracle_model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'scheduler_state_dict': scheduler.state_dict()
+                        'model_state_dict': self.oracle_model.state_dict(),
+                        'optimizer_state_dict': self.optimizer.state_dict(),
+                        'scheduler_state_dict': self.scheduler.state_dict()
                     }
 
                     # Always have a copy of the latest model
                     latest_name = '{}/latest_epoch.ckpt'.format(self.saving_path, epoch)
                     torch.save(checkpoint_dict, latest_name)
 
-                    # If the VC is the best so far, save the model with the name best_vc_epoch_{epoch}.ckpt
+                    # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
                     # Also save the optimizer state and the scheduler state, the epoch and the metrics
-                    VC = val_metrics['VC']
-                    if VC > best_VC:
+                    acc = val_metrics['val_acc']
+                    if acc > best_acc:
                         best_name = '{}/best_vc_epoch.ckpt'.format(self.saving_path, epoch)
                         torch.save(checkpoint_dict, best_name)
-                        best_VC = VC
+                        best_acc = best_acc
 
             self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_END)
 
-        oracle_model.to('cpu')
+        self.oracle_model = self.oracle_model.to('cpu')
 
 
-    def test(self, oracle_model, test_dataloader):
+    def test(self, test_dataloader):
         self.hooks_manager.trigger_hooks(HookEvent.ON_TEST_START)
 
-        oracle_model.eval() # Set model to evaluation mode
-        oracle_model.to(self.device)
+        self.oracle_model.eval() # Set model to evaluation mode
+        self.oracle_model.to(self.device)
 
-        test_metrics = {}
+        test_metrics = defaultdict(list)
         for i, batch in enumerate(test_dataloader):
-            _, test_info = oracle_model.test_step(batch, i)
-            test_metrics = add_item_to_means(test_metrics, test_info)
+            batch = to_device(batch, self.device)
+            _, test_info = self.oracle_model.test_step(batch, i)
+            add_item_to_means(test_metrics, test_info)
 
         test_metrics = mean_losses(test_metrics)
         self.hooks_manager.trigger_hooks(HookEvent.ON_TEST_END)

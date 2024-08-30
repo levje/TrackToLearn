@@ -65,6 +65,7 @@ class RlhfRefactored(TrackToLearnTraining):
         self.rlhf_inter_npv = rlhf_train_dto['rlhf_inter_npv']
         self.disable_oracle_training = rlhf_train_dto.get('disable_oracle_training', False)
         self.batch_size = rlhf_train_dto['batch_size']
+        self.oracle_batch_size = rlhf_train_dto['oracle_batch_size']
 
         ################################################
         # Start by initializing the agent trainer.     #
@@ -96,20 +97,11 @@ class RlhfRefactored(TrackToLearnTraining):
         self.dataset_manager = StreamlineDatasetManager(saving_path=self.oracle_training_dir,
                                                         dataset_to_augment_path=dataset_to_augment)
 
-        # self.lr_monitor = lightning.pytorch.callbacks.LearningRateMonitor(logging_interval='step')
-        self.oracle_next_train_steps = 0 # Since we are leveraging the same trainer, we need to add
-                                         # this value to the oracle trainer across different runs.
-        
-        # self.oracle_checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
-        #     dirpath=self.model_dir,
-        # )
-
         self.oracle_trainer = OracleTrainer(
-
             oracle_experiment,
             oracle_experiment_id,
             self.oracle_training_dir,
-            self.max_ep,
+            self.oracle_train_steps,
             enable_checkpointing=True,
             val_interval=1,
             device=self.device
@@ -196,7 +188,8 @@ class RlhfRefactored(TrackToLearnTraining):
         # Setup oracle training
         self.oracle = OracleSingleton(self.oracle_checkpoint,
                                       device=self.device,
-                                      batch_size=self.batch_size)
+                                      batch_size=self.oracle_batch_size)
+        self.oracle_trainer.setup_model_training(self.oracle.model)
         
         # Setup environment
         self.tracker_env = self.get_valid_env(npv=self.rlhf_inter_npv)
@@ -252,16 +245,14 @@ class RlhfRefactored(TrackToLearnTraining):
     def train_reward(self):
         """ Train the reward model using the dataset file. """
         dm = StreamlineDataModule(self.dataset_manager.dataset_file_path,
-                                  batch_size=self.batch_size,
+                                  batch_size=self.oracle_batch_size,
                                   num_workers=self.num_workers)
         dm.setup('fit')
-        self.oracle_trainer.fit_iter(self.oracle.model,
-                                     train_dataloader=dm.train_dataloader(),
+        self.oracle_trainer.fit_iter(train_dataloader=dm.train_dataloader(),
                                      val_dataloader=dm.val_dataloader())
 
         dm.setup('test')
-        self.oracle_trainer.test(self.oracle.model,
-                                 dataloaders=self.combined_test_loader)
+        self.oracle_trainer.test(test_dataloader=dm.test_dataloader())
 
     def _load_agent_checkpoint(self, alg: RLAlgorithm):
         """
@@ -359,36 +350,42 @@ class RlhfRefactored(TrackToLearnTraining):
         print("==================================================")
 
 
-############################
-
 def add_rlhf_training_args(parser: argparse.ArgumentParser):
     rlhf_group = parser.add_argument_group("RLHF Training Arguments")
     rlhf_group.add_argument('--alg', type=str, required=True,
                         help='The algorithm to use for training the agent.\n'
                              'Possible values are: SACAuto, PPO.')
-
-    agent_group = rlhf_group.add_mutually_exclusive_group(required=True)
-    agent_group.add_argument('--pretrain_max_ep', type=int,
-                        help='Number of epochs for pretraining the RL agent.\n'
-                             'This is done before starting the RLHF pretraining procedure.')
-    agent_group.add_argument('--agent_checkpoint', type=str,
-                        help='Path to the folder containing .pth files.\n'
-                             'This avoids retraining the agent from scratch \n'
-                             'and allows to directly fine-tune it.')
-    
-    rlhf_group.add_argument('--oracle_train_steps', type=int, required=True,
-                        help='Number of steps to fine-tune the oracle during RLHF training.')
-    rlhf_group.add_argument('--agent_train_steps', type=int, required=True,
-                        help='Number of steps to fine-tune the agent during RLHF training.')
     rlhf_group.add_argument('--num_workers', type=int, default=10,
                         help='Number of workers to use for data loading.')
-    rlhf_group.add_argument("--dataset_to_augment", type=str, help="Path to the dataset to augment.\n"
-                            "If this is not set, the dataset will be created from scratch entirely by the\n"
-                            "current learning agent.")
     rlhf_group.add_argument("--rlhf_inter_npv", type=int, default=None,
                             help="Number of seeds to use when generating intermediate tractograms\n"
                             "for the RLHF training pipeline. If None, the general npv will be used.")
-    rlhf_group.add_argument("--disable_oracle_training", action="store_true",)
+
+    # Agent training RLHF arguments 
+    agent_group = rlhf_group.add_argument_group("Agent Training Arguments")
+    agent_group.add_argument('--agent_train_steps', type=int, required=True,
+                        help='Number of steps to fine-tune the agent during RLHF training.')
+
+    agent_init_group = rlhf_group.add_mutually_exclusive_group(required=True)
+    agent_init_group.add_argument('--pretrain_max_ep', type=int,
+                        help='Number of epochs for pretraining the RL agent.\n'
+                             'This is done before starting the RLHF pretraining procedure.')
+    agent_init_group.add_argument('--agent_checkpoint', type=str,
+                        help='Path to the folder containing .pth files.\n'
+                             'This avoids retraining the agent from scratch \n'
+                             'and allows to directly fine-tune it.')
+
+    # Oracle training RLHF arguments
+    oracle_group = rlhf_group.add_argument_group("Oracle Training Arguments")
+    oracle_group.add_argument('--oracle_train_steps', type=int, required=True,
+                        help='Number of steps to fine-tune the oracle during RLHF training.')
+    oracle_group.add_argument('--oracle_batch_size', type=int, default=2816,
+                        help='Batch size to use for training the oracle.')
+    oracle_group.add_argument("--dataset_to_augment", type=str, help="Path to the dataset to augment.\n"
+                            "If this is not set, the dataset will be created from scratch entirely by the\n"
+                            "current learning agent.")
+    oracle_group.add_argument("--disable_oracle_training", action="store_true",
+                            help="Disable oracle training during RLHF training.\n")
     return parser
 
 def get_trainer_cls_and_args(alg_name: str):

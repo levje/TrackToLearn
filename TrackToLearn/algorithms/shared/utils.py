@@ -2,10 +2,16 @@ import numpy as np
 import torch
 
 from torch import nn
+from collections import defaultdict
 
 
 def add_item_to_means(means, dic):
-    return {k: means[k] + [dic[k]] for k in dic.keys()}
+    if isinstance(means, defaultdict):
+        for k in dic.keys():
+            means[k].append(dic[k])
+    else:
+        means = {k: means[k] + [dic[k]] for k in dic.keys()}
+    return means
 
 
 def add_to_means(means, dic):
