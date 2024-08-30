@@ -53,7 +53,11 @@ class StreamlineDataModule(object):
         self.valid_indices = self.indices[int(0.7 * num_streamlines):int(0.9 * num_streamlines)]
         self.test_indices = self.indices[int(0.9 * num_streamlines):]
 
-        print(f"Train: {len(self.train_indices)} Val: {len(self.valid_indices)} Test: {len(self.test_indices)}")
+        assert len(self.train_indices) > 0 and \
+               len(self.valid_indices) > 0 and \
+               len(self.test_indices) > 0, \
+            "The dataset is too small to be split into train, validation and test sets." \
+            f"Train: {len(self.train_indices)} Val: {len(self.valid_indices)} Test: {len(self.test_indices)}"
 
     def prepare_data(self):
         # pass ?

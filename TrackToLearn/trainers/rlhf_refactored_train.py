@@ -25,12 +25,6 @@ from TrackToLearn.utils.torch_utils import assert_accelerator, get_device_str
 
 assert_accelerator()
 
-def check_if_file_already_opened(file_path: str):
-    """ Check if the file is already opened. """
-    with h5py.File(file_path, 'a') as f:
-        print("checking if file is already opened")
-        return
-
 class RlhfRefactored(TrackToLearnTraining):
     
     def __init__(
@@ -227,9 +221,7 @@ class RlhfRefactored(TrackToLearnTraining):
                     self.dataset_manager.add_tractograms_to_dataset(filtered_tractograms)
 
                     # Train reward model
-                    check_if_file_already_opened(self.dataset_manager.dataset_file_path)
                     self.train_reward()
-                    check_if_file_already_opened(self.dataset_manager.dataset_file_path)
 
             # Train the RL agent
             self.agent_trainer.rl_train(alg,

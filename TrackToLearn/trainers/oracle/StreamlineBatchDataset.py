@@ -66,7 +66,6 @@ class StreamlineBatchDataset(Dataset):
         Keep the file open until the object is deleted.
         """
         if not hasattr(self, 'f'):
-            print("Opening the {} file (mem {})".format(self.file_path, id(self)))
             self.f = h5py.File(self.file_path, 'r')
         return self.f
 
@@ -74,7 +73,6 @@ class StreamlineBatchDataset(Dataset):
         """ Destructor to close the hdf5 file.
         """
         if hasattr(self, 'f'):
-            print("Closing the {} file (mem {})".format(self.file_path, id(self)))
             self.f.close()
 
     def __len__(self):
@@ -87,8 +85,6 @@ class StreamlineBatchDataset(Dataset):
         """
 
         state_0, *_ = self[[0, 1]]
-        # self.f.close()
-        # del self.f
         return state_0[0]
 
     def __getitem__(self, indices):
