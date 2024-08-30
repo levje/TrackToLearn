@@ -40,10 +40,10 @@ if [ $islocal -eq 1 ]; then
         PYTHONEXEC=~/miniconda3/envs/$1/bin/python
     fi
     DATASETDIR=$DATADIR
-    ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
-    AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
-    # ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
+    # ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
+    # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
+    ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy

@@ -6,6 +6,7 @@ from TrackToLearn.utils.torch_utils import get_device
 from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses
 from enum import Enum
 from collections import defaultdict
+from tqdm import tqdm
 
 def to_device(obj, device):
     if isinstance(obj, (list, tuple)):
@@ -117,74 +118,79 @@ class OracleTrainer(object):
             self._reset_optimizers()
 
         best_acc = 0
-        for epoch in range(self.max_epochs):
-            self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_START)
+        with tqdm(range(len(train_dataloader))) as pbar:
+            for epoch in range(self.max_epochs):
+                pbar.set_description(f"Training oracle epoch {epoch}")
+                self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_START)
 
-            train_metrics = defaultdict(list)
-            for i, batch in enumerate(train_dataloader):
-                self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_START)
+                train_metrics = defaultdict(list)
+                for i, batch in enumerate(train_dataloader):
+                    self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_START)
 
-                batch = to_device(batch, self.device)
-
-                # Train step
-                loss, train_info = self.oracle_model.training_step(batch, i)
-                add_item_to_means(train_metrics, train_info)
-                train_metrics['lr'].append(torch.tensor(self.optimizer.param_groups[0]['lr']))
-
-                # Clear gradients
-                self.optimizer.zero_grad()
-
-                # Backward pass
-                self.scaler.scale(loss).backward()
-
-                # Update parameters
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self.scheduler.step()
-
-                self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_END)
-            train_metrics = mean_losses(train_metrics)
-
-            self.oracle_monitor.log_metrics(train_metrics, epoch)
-
-            if epoch % self.val_interval == 0:
-                val_metrics = defaultdict(list)
-                for i, batch in enumerate(val_dataloader):
                     batch = to_device(batch, self.device)
-                    self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_START)
 
-                    # TODO: Implement validation step
-                    _, val_info = self.oracle_model.validation_step(batch, i)
-                    add_item_to_means(val_metrics, val_info)
+                    # Train step
+                    loss, train_info = self.oracle_model.training_step(batch, i)
+                    add_item_to_means(train_metrics, train_info)
+                    train_metrics['lr'].append(torch.tensor(self.optimizer.param_groups[0]['lr']))
 
-                    self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_END)
-                
-                val_metrics = mean_losses(val_metrics)
-                self.oracle_monitor.log_metrics(val_metrics, epoch)
+                    # Clear gradients
+                    self.optimizer.zero_grad()
 
-                # Checkpointing
-                if self.checkpointing_enabled:
-                    checkpoint_dict = {
-                        'epoch': epoch,
-                        'metrics': val_metrics,
-                        'model_state_dict': self.oracle_model.state_dict(),
-                        'optimizer_state_dict': self.optimizer.state_dict(),
-                        'scheduler_state_dict': self.scheduler.state_dict()
-                    }
+                    # Backward pass
+                    self.scaler.scale(loss).backward()
 
-                    # Always have a copy of the latest model
-                    latest_name = '{}/latest_epoch.ckpt'.format(self.saving_path, epoch)
-                    torch.save(checkpoint_dict, latest_name)
+                    # Update parameters
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.scheduler.step()
 
-                    # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
-                    # Also save the optimizer state and the scheduler state, the epoch and the metrics
-                    acc = val_metrics['val_acc']
-                    if acc > best_acc:
-                        best_name = '{}/best_vc_epoch.ckpt'.format(self.saving_path, epoch)
-                        torch.save(checkpoint_dict, best_name)
-                        best_acc = best_acc
+                    pbar.update()
+                    # pbar.set_postfix(train_loss=train_metrics['train_loss'])
+                    self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_END)
+                train_metrics = mean_losses(train_metrics)
 
-            self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_END)
+                self.oracle_monitor.log_metrics(train_metrics, epoch)
+
+                if epoch % self.val_interval == 0:
+                    val_metrics = defaultdict(list)
+                    for i, batch in enumerate(val_dataloader):
+                        batch = to_device(batch, self.device)
+                        self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_START)
+
+                        # TODO: Implement validation step
+                        _, val_info = self.oracle_model.validation_step(batch, i)
+                        add_item_to_means(val_metrics, val_info)
+
+                        self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_END)
+                    
+                    val_metrics = mean_losses(val_metrics)
+                    self.oracle_monitor.log_metrics(val_metrics, epoch)
+
+                    # Checkpointing
+                    if self.checkpointing_enabled:
+                        checkpoint_dict = {
+                            'epoch': epoch,
+                            'metrics': val_metrics,
+                            'model_state_dict': self.oracle_model.state_dict(),
+                            'optimizer_state_dict': self.optimizer.state_dict(),
+                            'scheduler_state_dict': self.scheduler.state_dict()
+                        }
+
+                        # Always have a copy of the latest model
+                        latest_name = '{}/latest_epoch.ckpt'.format(self.saving_path, epoch)
+                        torch.save(checkpoint_dict, latest_name)
+
+                        # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
+                        # Also save the optimizer state and the scheduler state, the epoch and the metrics
+                        acc = val_metrics['val_acc']
+                        if acc > best_acc:
+                            best_name = '{}/best_vc_epoch.ckpt'.format(self.saving_path, epoch)
+                            torch.save(checkpoint_dict, best_name)
+                            best_acc = best_acc
+
+                pbar.reset()
+                self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_END)
 
         self.oracle_model = self.oracle_model.to('cpu')
 

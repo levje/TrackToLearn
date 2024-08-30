@@ -210,17 +210,21 @@ class RlhfRefactored(TrackToLearnTraining):
                     tractograms_path = os.path.join(tmpdir, "tractograms")
                     if not os.path.exists(tractograms_path):
                         os.makedirs(tractograms_path)
+                    print("Generating tractograms for RLHF training...")
                     tractograms = self.generate_and_save_tractograms(self.tracker, self.tracker_env, tractograms_path)
 
                     # Filter the tractogram
                     filtered_path = os.path.join(tmpdir, "filtered")
                     if not os.path.exists(filtered_path):
                         os.makedirs(filtered_path)
+                    print("Filtering tractograms for RLHF training...")
                     filtered_tractograms = self.filter_tractograms(tractograms, filtered_path) # Need to filter for each filterer and keep the same order.
 
+                    print("Adding filtered tractograms to the dataset...")
                     self.dataset_manager.add_tractograms_to_dataset(filtered_tractograms)
 
                     # Train reward model
+                    print("Training reward model...")
                     self.train_reward()
 
             # Train the RL agent

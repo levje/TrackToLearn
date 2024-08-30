@@ -33,8 +33,6 @@ class OracleMonitor(object):
         elif len(metrics_dict) == 0:
             return
 
-        processed_metrics = {}
-        for key, value in metrics_dict.items():
-            processed_metrics[self.prefix + key] = value
-        self.experiment.log_metrics(processed_metrics, step=episode)
+        prefix = None if self.prefix == '' else self.prefix
+        self.experiment.log_metrics(metrics_dict, step=episode, prefix=prefix)
         
