@@ -167,7 +167,9 @@ class RlhfRefactored(TrackToLearnTraining):
                              starting_ep=0,
                              save_model_dir=self.ref_model_dir)
             current_ep += self.pretrain_max_ep
-            alg.old_agent.load_state_dict(alg.agent.actor.state_dict()) # TODO: Refactor
+
+            if isinstance(alg, PPO):
+                alg.old_agent.load_state_dict(alg.agent.actor.state_dict()) # TODO: Refactor
         else:
             # The agent is already pretrained, just need to fine-tune it.
             print("Skipping pretraining procedure: loading agent from checkpoint...", end=" ")

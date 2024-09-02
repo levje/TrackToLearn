@@ -23,6 +23,7 @@ from TrackToLearn.experiment.tractometer_validator import TractometerValidator
 from TrackToLearn.experiment.experiment import Experiment
 from TrackToLearn.tracking.tracker import Tracker
 from TrackToLearn.utils.torch_utils import get_device, assert_accelerator
+from TrackToLearn.utils.hooks import HooksManager, RlHookEvent
 
 
 class TrackToLearnTraining(Experiment):
@@ -140,6 +141,8 @@ class TrackToLearnTraining(Experiment):
             self.validators.append(OracleValidator(
                 self.oracle_checkpoint, self.device))
 
+        self._hooks_manager = HooksManager(RlHookEvent)
+
         self.hyperparameters = {
             # RL parameters
             # TODO: Make sure all parameters are logged
@@ -233,6 +236,9 @@ class TrackToLearnTraining(Experiment):
         upper_bound = i_episode + max_ep
         # Transition counter
         t = 0
+
+        # Trigger start hooks
+        self._hooks_manager.trigger_hooks(RlHookEvent.ON_RL_TRAIN_START)
 
         # Initialize Trackers, which will handle streamline generation and
         # trainnig
@@ -399,6 +405,9 @@ class TrackToLearnTraining(Experiment):
             self.comet_monitor.log_losses(scores, i_episode)
 
         self.save_model(alg, save_model_dir=save_model_dir)
+
+        # Trigger end hooks
+        self._hooks_manager.trigger_hooks(RlHookEvent.ON_RL_TRAIN_END)
 
     def setup_logging(self):
         # Save hyperparameters

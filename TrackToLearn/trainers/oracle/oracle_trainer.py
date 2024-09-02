@@ -4,7 +4,7 @@ from TrackToLearn.oracles.transformer_oracle import LightningLikeModule
 from TrackToLearn.trainers.oracle.oracle_monitor import OracleMonitor
 from TrackToLearn.utils.torch_utils import get_device
 from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses
-from enum import Enum
+from TrackToLearn.utils.hooks import HooksManager, OracleHookEvent
 from collections import defaultdict
 from tqdm import tqdm
 
@@ -12,30 +12,6 @@ def to_device(obj, device):
     if isinstance(obj, (list, tuple)):
         return [to_device(o, device) for o in obj]
     return obj.to(device)
-
-class HookEvent(Enum):
-    ON_TRAIN_EPOCH_START = 'on_train_epoch_start'
-    ON_TRAIN_EPOCH_END = 'on_train_epoch_end'
-    ON_TRAIN_BATCH_START = 'on_train_batch_start'
-    ON_TRAIN_BATCH_END = 'on_train_batch_end'
-    ON_VAL_BATCH_START = 'on_val_batch_start'
-    ON_VAL_BATCH_END = 'on_val_batch_end'
-    ON_TEST_START = 'on_test_start'
-    ON_TEST_END = 'on_test_end'
-
-class HooksManager(object):
-    def __init__(self) -> None:
-        self._hooks = {event: [] for event in HookEvent}
-
-    def register_hook(self, event, hook):
-        self._hooks[event].append(hook)
-
-    def unregister_hook(self, event, hook):
-        self._hooks[event].remove(hook)
-
-    def trigger_hooks(self, event, *args, **kwargs):
-        for hook in self._hooks[event]:
-            hook(*args, **kwargs)
 
 class OracleTrainer(object):
     def __init__(self,
@@ -57,7 +33,7 @@ class OracleTrainer(object):
         self.max_epochs = max_epochs
         self.val_interval = val_interval
 
-        self.hooks_manager = HooksManager()
+        self.hooks_manager = HooksManager(OracleHookEvent)
         self.oracle_monitor = OracleMonitor(
             experiment=self.experiment,
             experiment_id=self.experiment_id,
@@ -121,11 +97,11 @@ class OracleTrainer(object):
         with tqdm(range(len(train_dataloader))) as pbar:
             for epoch in range(self.max_epochs):
                 pbar.set_description(f"Training oracle epoch {epoch}")
-                self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_START)
+                self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_EPOCH_START)
 
                 train_metrics = defaultdict(list)
                 for i, batch in enumerate(train_dataloader):
-                    self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_START)
+                    self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_START)
 
                     batch = to_device(batch, self.device)
 
@@ -147,7 +123,7 @@ class OracleTrainer(object):
 
                     pbar.update()
                     # pbar.set_postfix(train_loss=train_metrics['train_loss'])
-                    self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_BATCH_END)
+                    self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_END)
                 train_metrics = mean_losses(train_metrics)
 
                 self.oracle_monitor.log_metrics(train_metrics, epoch)
@@ -156,13 +132,13 @@ class OracleTrainer(object):
                     val_metrics = defaultdict(list)
                     for i, batch in enumerate(val_dataloader):
                         batch = to_device(batch, self.device)
-                        self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_START)
+                        self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_START)
 
                         # TODO: Implement validation step
                         _, val_info = self.oracle_model.validation_step(batch, i)
                         add_item_to_means(val_metrics, val_info)
 
-                        self.hooks_manager.trigger_hooks(HookEvent.ON_VAL_BATCH_END)
+                        self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_END)
                     
                     val_metrics = mean_losses(val_metrics)
                     self.oracle_monitor.log_metrics(val_metrics, epoch)
@@ -190,13 +166,13 @@ class OracleTrainer(object):
                             best_acc = best_acc
 
                 pbar.reset()
-                self.hooks_manager.trigger_hooks(HookEvent.ON_TRAIN_EPOCH_END)
+                self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_EPOCH_END)
 
         self.oracle_model = self.oracle_model.to('cpu')
 
 
     def test(self, test_dataloader):
-        self.hooks_manager.trigger_hooks(HookEvent.ON_TEST_START)
+        self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TEST_START)
 
         self.oracle_model.eval() # Set model to evaluation mode
         self.oracle_model.to(self.device)
@@ -208,5 +184,5 @@ class OracleTrainer(object):
             add_item_to_means(test_metrics, test_info)
 
         test_metrics = mean_losses(test_metrics)
-        self.hooks_manager.trigger_hooks(HookEvent.ON_TEST_END)
+        self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TEST_END)
         return test_metrics
