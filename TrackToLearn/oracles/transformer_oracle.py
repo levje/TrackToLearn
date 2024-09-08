@@ -121,13 +121,29 @@ class TransformerOracle(LightningLikeModule):
         # Save the hyperparameters to the checkpoint
         # self.save_hyperparameters()
 
-    def configure_optimizers(self, trainer):
+    def configure_optimizers(self, trainer, checkpoint=None):
         self.trainer = trainer
+
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer, T_max=self.trainer.max_epochs
         )
+
         scaler = torch.cuda.amp.GradScaler(enabled=self.enable_amp)
+
+        if checkpoint is not None:
+            optimizer.load_state_dict(checkpoint["optimizer_states"])
+            scheduler.load_state_dict(checkpoint["lr_schedulers"])
+            
+            if "scaler" in checkpoint.keys():
+                scaler.load_state_dict(checkpoint["scaler"])
+
+        elif self.checkpoint_state_dicts is not None:
+            optimizer.load_state_dict(self.checkpoint_state_dicts["optimizer"])
+            scheduler.load_state_dict(self.checkpoint_state_dicts["scheduler"])
+
+            if "scaler" in self.checkpoint_state_dicts.keys():
+                scaler.load_state_dict(self.checkpoint_state_dicts["scaler"])
 
         return {
             "optimizer": optimizer,
@@ -175,6 +191,14 @@ class TransformerOracle(LightningLikeModule):
             input_size, output_size, n_head, n_layers, lr, loss)
 
         model.load_state_dict(checkpoint["state_dict"])
+        model.checkpoint_state_dicts = {
+            "scheduler": checkpoint["lr_schedulers"][0],
+            "optimizer": checkpoint["optimizer_states"][0],
+        }
+
+        if "scaler" in checkpoint.keys():
+            model.checkpoint_state_dicts["scaler"] = checkpoint
+
         return model
     
     def training_step(self, train_batch, batch_idx):
@@ -198,10 +222,16 @@ class TransformerOracle(LightningLikeModule):
                 'train_spec':       self.spec(y_hat, y_int),
                 'train_precision':  self.precision(y_hat, y_int),
                 'train_mse':        self.mse(y_hat, y),
-                'train_mae':        self.mae(y_hat, y)
+                'train_mae':        self.mae(y_hat, y),
+                'train_f1':         self.f1(y_hat, y)
             }
         
-        return loss, info
+        matrix = {
+            'train_positives':  y_int.sum(),
+            'train_negatives':  (1 - y_int).sum()
+        }
+
+        return loss, info, matrix
 
     def validation_step(self, val_batch, batch_idx):
         x, y = val_batch
@@ -224,10 +254,19 @@ class TransformerOracle(LightningLikeModule):
                 'val_precision': self.precision(y_hat, y_int),
                 'val_mse':       self.mse(y_hat, y),
                 'val_mae':       self.mae(y_hat, y),
-                'val_f1':        self.f1(y_hat, y),       
+                'val_f1':        self.f1(y_hat, y),
             }
 
-        return loss, info
+        matrix = {
+            'val_positives': y_int.sum(),
+            'val_negatives': (1 - y_int).sum(),
+            'TP': (y_int * y_hat).sum(),
+            'FP': ((1 - y_int) * y_hat).sum(),
+            'TN': ((1 - y_int) * (1 - y_hat)).sum(),
+            'FN': (y_int * (1 - y_hat)).sum(),
+        }
+
+        return loss, info, matrix
 
     def test_step(self, test_batch, batch_idx):
         x, y = test_batch

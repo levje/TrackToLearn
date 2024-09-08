@@ -205,7 +205,8 @@ class TrackToLearnTraining(Experiment):
         directory = self.model_dir if save_model_dir is None else save_model_dir
         if not os.path.exists(directory):
             os.makedirs(directory)
-        alg.agent.save(directory, "last_model_state")
+        # alg.agent.save(directory, "last_model_state")
+        alg.save_checkpoint(os.path.join(directory, "last_model_state.ckpt"))
 
     def rl_train(
         self,

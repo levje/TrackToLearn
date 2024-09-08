@@ -323,10 +323,16 @@ class ActorCritic(object):
         self.actor.load_state_dict(actor_state_dict)
         self.critic.load_state_dict(critic_state_dict)
 
-    def state_dict(self):
+    def state_dict(self, as_dict=False):
         """ Returns state dicts so they can be loaded into another policy
         """
-        return self.actor.state_dict(), self.critic.state_dict()
+        if as_dict:
+            return {
+                'actor': self.actor.state_dict(),
+                'critic': self.critic.state_dict()
+            }
+        else:
+            return self.actor.state_dict(), self.critic.state_dict()
 
     def save(self, path: str, filename: str):
         """ Save policy at specified path and filename
@@ -359,6 +365,15 @@ class ActorCritic(object):
         self.actor.load_state_dict(
             torch.load(pjoin(path, filename + '_actor.pth'),
                        map_location=self.device))
+        
+    def load_checkpoint(self, agent_checkpoint: dict):
+        """
+        This function should get passed a dictionary containing the state
+        of the actor and the critic. It should have two keys: 'actor' and
+        'critic' both associated with their respective state_dicts.
+        """
+        self.actor.load_state_dict(agent_checkpoint['actor'])
+        self.critic.load_state_dict(agent_checkpoint['critic'])
 
     def eval(self):
         """ Switch actors and critics to eval mode

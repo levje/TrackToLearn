@@ -120,15 +120,6 @@ def add_ppo_args(parser):
     parser.add_argument('--val_clip_coef', default=0.2, type=float,
                         help='Clipping parameter for the value function.')
     
-    parser.add_argument('--adaptive_kl', action='store_true',
-                        help='This flag enables the adaptive kl penalty.\n'
-                        'Otherwise, the penalty coefficient is fixed.')
-    parser.add_argument('--kl_penalty_coeff', default=0.02, type=float,
-                        help='Initial KL penalty coefficient.')
-    parser.add_argument('--kl_target', default=0.005, type=float,
-                        help='KL target value.')
-    parser.add_argument('--kl_horizon', default=1000, type=int,
-                        help='KL penalty horizon.')
     parser.add_argument('--init_critic_to_oracle', action='store_true',
                         help='Initialize the critic to the oracle model.')
 

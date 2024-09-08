@@ -26,6 +26,10 @@ def mean_losses(dic):
                 for k in dic.keys()}
     return new_dict
 
+def add_losses(dic):
+    new_dict = {k: np.sum(torch.stack(dic[k]).cpu().numpy(), axis=0)
+                for k in dic.keys()}
+    return new_dict
 
 def mean_rewards(dic):
     return {k: np.mean(np.asarray(dic[k]), axis=0) for k in dic.keys()}

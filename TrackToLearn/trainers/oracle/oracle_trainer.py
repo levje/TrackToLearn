@@ -3,7 +3,7 @@ import torch.nn as nn
 from TrackToLearn.oracles.transformer_oracle import LightningLikeModule
 from TrackToLearn.trainers.oracle.oracle_monitor import OracleMonitor
 from TrackToLearn.utils.torch_utils import get_device
-from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses
+from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses, add_losses
 from TrackToLearn.utils.hooks import HooksManager, OracleHookEvent
 from collections import defaultdict
 from tqdm import tqdm
@@ -33,6 +33,7 @@ class OracleTrainer(object):
         self.max_epochs = max_epochs
         self.val_interval = val_interval
 
+        self._global_epoch = 0
         self.hooks_manager = HooksManager(OracleHookEvent)
         self.oracle_monitor = OracleMonitor(
             experiment=self.experiment,
@@ -52,6 +53,7 @@ class OracleTrainer(object):
         """
         self.oracle_model = oracle_model
         self._reset_optimizers()
+        self._global_epoch = 0
 
     def _verify_model_was_setup(self):
         if not hasattr(self, 'oracle_model') or self.oracle_model is None:
@@ -100,15 +102,22 @@ class OracleTrainer(object):
                 self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_EPOCH_START)
 
                 train_metrics = defaultdict(list)
+                train_matrix = defaultdict(list)
                 for i, batch in enumerate(train_dataloader):
+                    
+                    # Breakpoint if the batch contains only zeros
+                    if torch.all(batch[0] == 0):
+                        print("Batch contains only zeros")
+
                     self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_START)
 
                     batch = to_device(batch, self.device)
 
                     # Train step
-                    loss, train_info = self.oracle_model.training_step(batch, i)
+                    loss, train_info, matrix = self.oracle_model.training_step(batch, i)
                     add_item_to_means(train_metrics, train_info)
                     train_metrics['lr'].append(torch.tensor(self.optimizer.param_groups[0]['lr']))
+                    add_item_to_means(train_matrix, matrix)
 
                     # Clear gradients
                     self.optimizer.zero_grad()
@@ -122,54 +131,78 @@ class OracleTrainer(object):
                     self.scheduler.step()
 
                     pbar.update()
-                    # pbar.set_postfix(train_loss=train_metrics['train_loss'])
                     self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_END)
-                train_metrics = mean_losses(train_metrics)
 
-                self.oracle_monitor.log_metrics(train_metrics, epoch)
+                train_metrics = mean_losses(train_metrics)
+                self.oracle_monitor.log_metrics(train_metrics, self._global_epoch)
+
+                train_matrix = add_losses(train_matrix)
+                self.oracle_monitor.log_metrics(train_matrix, self._global_epoch)
 
                 if epoch % self.val_interval == 0:
-                    val_metrics = defaultdict(list)
-                    for i, batch in enumerate(val_dataloader):
-                        batch = to_device(batch, self.device)
-                        self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_START)
-
-                        # TODO: Implement validation step
-                        _, val_info = self.oracle_model.validation_step(batch, i)
-                        add_item_to_means(val_metrics, val_info)
-
-                        self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_END)
-                    
-                    val_metrics = mean_losses(val_metrics)
-                    self.oracle_monitor.log_metrics(val_metrics, epoch)
-
-                    # Checkpointing
-                    if self.checkpointing_enabled:
-                        checkpoint_dict = {
-                            'epoch': epoch,
-                            'metrics': val_metrics,
-                            'model_state_dict': self.oracle_model.state_dict(),
-                            'optimizer_state_dict': self.optimizer.state_dict(),
-                            'scheduler_state_dict': self.scheduler.state_dict()
-                        }
-
-                        # Always have a copy of the latest model
-                        latest_name = '{}/latest_epoch.ckpt'.format(self.saving_path, epoch)
-                        torch.save(checkpoint_dict, latest_name)
-
-                        # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
-                        # Also save the optimizer state and the scheduler state, the epoch and the metrics
-                        acc = val_metrics['val_acc']
-                        if acc > best_acc:
-                            best_name = '{}/best_vc_epoch.ckpt'.format(self.saving_path, epoch)
-                            torch.save(checkpoint_dict, best_name)
-                            best_acc = best_acc
+                    self._validate(val_dataloader, epoch, best_acc)
 
                 pbar.reset()
+                self._global_epoch += 1
                 self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_EPOCH_END)
 
         self.oracle_model = self.oracle_model.to('cpu')
 
+    def _validate(self, val_dataloader, epoch, best_acc):
+        val_metrics = defaultdict(list)
+        val_matrix = defaultdict(list)
+        for i, batch in enumerate(val_dataloader):
+            if torch.all(batch[0] == 0):
+                print("Batch contains only zeros")
+
+            batch = to_device(batch, self.device)
+            self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_START)
+
+            # TODO: Implement validation step
+            _, val_info, matrix = self.oracle_model.validation_step(batch, i)
+            if val_info['val_f1'] == 0:
+                print("F1 score is 0")
+            add_item_to_means(val_metrics, val_info)
+            add_item_to_means(val_matrix, matrix)
+
+            self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_END)
+        
+        total = 0
+        number = len(val_metrics['val_f1'])
+        print("F1 scores: [", end='')
+        for f1 in val_metrics['val_f1']:
+            print(f1.item(), end=', ')
+            total += f1
+        print("]")
+        total = total / number
+
+        val_metrics = mean_losses(val_metrics)
+        self.oracle_monitor.log_metrics(val_metrics, self._global_epoch)
+        
+        val_matrix = add_losses(val_matrix)
+        self.oracle_monitor.log_metrics(val_matrix, self._global_epoch)
+
+        # Checkpointing
+        if self.checkpointing_enabled:
+            checkpoint_dict = {
+                'epoch': epoch,
+                'metrics': val_metrics,
+                'model_state_dict': self.oracle_model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'scheduler_state_dict': self.scheduler.state_dict()
+            }
+
+            # Always have a copy of the latest model
+            latest_name = '{}/latest_epoch.ckpt'.format(self.saving_path, epoch)
+            torch.save(checkpoint_dict, latest_name)
+
+            # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
+            # Also save the optimizer state and the scheduler state, the epoch and the metrics
+            acc = val_metrics['val_acc']
+            if acc > best_acc:
+                best_name = '{}/best_vc_epoch.ckpt'.format(self.saving_path, epoch)
+                torch.save(checkpoint_dict, best_name)
+                best_acc = best_acc
 
     def test(self, test_dataloader):
         self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TEST_START)

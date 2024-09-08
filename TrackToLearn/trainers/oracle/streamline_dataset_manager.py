@@ -97,8 +97,8 @@ class StreamlineDatasetManager(object):
                 scores_group.resize(self.current_nb_streamlines + nb_new_streamlines, axis=0)
 
             for sft in filtered_tractograms:
-                sft.to_corner()
                 sft.to_vox()
+                sft.to_corner()
                 sft_nb_streamlines = len(sft.streamlines)
                 ps_indices = np.random.choice(sft_nb_streamlines, sft_nb_streamlines, replace=False)
                 idx = indices[:sft_nb_streamlines]

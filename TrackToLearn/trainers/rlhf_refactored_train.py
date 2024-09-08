@@ -40,7 +40,11 @@ class RlhfRefactored(TrackToLearnTraining):
 
         # General RLHF parameters.
         self.pretrain_max_ep = rlhf_train_dto.get('pretrain_max_ep', None)
-        self.agent_checkpoint_dir = rlhf_train_dto.get('agent_checkpoint', None)
+        self.agent_checkpoint_dir = rlhf_train_dto.get('agent_checkpoint_dir', None)
+        self.agent_checkpoint = rlhf_train_dto.get('agent_checkpoint', None)
+        if self.agent_checkpoint:
+            assert os.path.isfile(self.agent_checkpoint), "Agent checkpoint must be an checkpoint file."
+
         self.ref_model_dir = os.path.join(self.experiment_path, "ref_model")
         self.model_saving_dirs.append(self.ref_model_dir)
         if not os.path.exists(self.ref_model_dir):
@@ -50,8 +54,8 @@ class RlhfRefactored(TrackToLearnTraining):
         if not os.path.exists(self.oracle_training_dir):
             os.makedirs(self.oracle_training_dir)
 
-        assert self.pretrain_max_ep is not None or self.agent_checkpoint_dir is not None, \
-            "Either pretrain_max_ep or agent_checkpoint must be provided for RLHF training."
+        assert self.pretrain_max_ep is not None or (self.agent_checkpoint_dir is not None or self.agent_checkpoint is not None), \
+            "Either pretrain_max_ep or (agent_checkpoint | agent_checkpoint_dir) must be provided for RLHF training."
         
         self.oracle_train_steps = rlhf_train_dto['oracle_train_steps']
         self.agent_train_steps = rlhf_train_dto['agent_train_steps']
@@ -155,7 +159,7 @@ class RlhfRefactored(TrackToLearnTraining):
         # Setup agent trainer. (needed since we don't call the run method)
         self.agent_trainer.setup_logging()
 
-        if self.agent_checkpoint_dir is None:
+        if self.agent_checkpoint_dir is None and self.agent_checkpoint is None:
             # Start by pretraining the RL agent to get reasonable results.
             if isinstance(alg, PPO):
                 alg.kl_penalty_ctrler.pretrain_mode() # TODO: Refactor
@@ -293,11 +297,34 @@ class RlhfRefactored(TrackToLearnTraining):
                 hparams = json.load(f)
             return hparams
 
-        hparams = load_hyperparameters(os.path.join(self.agent_checkpoint_dir, 'hyperparameters.json'))
+        if self.agent_checkpoint:
+            # In the case we only give the bundled checkpoint file.
+            # We need to extract the hyperparameters.json file which
+            # contains the hyperparameters of the training and should
+            # be located beside the checkpoint file.
+            checkpoint_dir = os.path.dirname(self.agent_checkpoint)
+        else:
+            # We provide the checkpoint directory (with two files for
+            # the weights of the policy and the critic).
+            checkpoint_dir = self.agent_checkpoint_dir
+
+        print("Agent checkpoint: {}".format(self.agent_checkpoint))
+        print("checkpoint_dir: {}".format(checkpoint_dir))
+
+        hparams = load_hyperparameters(os.path.join(checkpoint_dir, 'hyperparameters.json'))
         ckpt_algo = get_algorithm_cls(hparams['algorithm'])
 
         if isinstance(alg, ckpt_algo): # Same algorithm, same architecture.
-            alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+            if self.agent_checkpoint_dir:
+                # Use the legacy method that loads the two files of weights
+                # for the policy and the critic.
+                alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+            elif self.agent_checkpoint:
+                # Load the bundled checkpoint file.
+                alg.load_checkpoint(self.agent_checkpoint)
+            else:
+                raise ValueError("Must specify either agent_checkpoint_dir or agent_checkpoint.")
+
         elif ckpt_algo == SACAuto and isinstance(alg, PPO):
             # This is needed, because PPO doesn't have the same critic as SAC.
             # This means that we start the PPO training with a randomly initialized critic.
@@ -358,6 +385,17 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
     rlhf_group.add_argument("--rlhf_inter_npv", type=int, default=None,
                             help="Number of seeds to use when generating intermediate tractograms\n"
                             "for the RLHF training pipeline. If None, the general npv will be used.")
+    
+    # The following arguments are usually used for PPO, but we are also testing it for other algorithms.
+    parser.add_argument('--adaptive_kl', action='store_true',
+                        help='This flag enables the adaptive kl penalty.\n'
+                        'Otherwise, the penalty coefficient is fixed.')
+    parser.add_argument('--kl_penalty_coeff', default=0.02, type=float,
+                        help='Initial KL penalty coefficient.')
+    parser.add_argument('--kl_target', default=0.005, type=float,
+                        help='KL target value.')
+    parser.add_argument('--kl_horizon', default=1000, type=int,
+                        help='KL penalty horizon.')
 
     # Agent training RLHF arguments 
     agent_group = rlhf_group.add_argument_group("Agent Training Arguments")
@@ -368,10 +406,13 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
     agent_init_group.add_argument('--pretrain_max_ep', type=int,
                         help='Number of epochs for pretraining the RL agent.\n'
                              'This is done before starting the RLHF pretraining procedure.')
-    agent_init_group.add_argument('--agent_checkpoint', type=str,
+    agent_checkpoint_group = agent_init_group.add_mutually_exclusive_group()
+    agent_checkpoint_group.add_argument('--agent_checkpoint_dir', type=str,
                         help='Path to the folder containing .pth files.\n'
                              'This avoids retraining the agent from scratch \n'
                              'and allows to directly fine-tune it.')
+    agent_checkpoint_group.add_argument('--agent_checkpoint', type=str,
+                        help='Path to the agent checkpoint FILE to load.')
 
     # Oracle training RLHF arguments
     oracle_group = rlhf_group.add_argument_group("Oracle Training Arguments")

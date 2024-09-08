@@ -3,17 +3,32 @@ import numpy as np
 import torch
 
 import torch.nn.functional as F
-
+from dataclasses import dataclass
 from typing import Tuple
 
 from TrackToLearn.algorithms.sac import SAC
 from TrackToLearn.algorithms.shared.offpolicy import SACActorCritic
 from TrackToLearn.algorithms.shared.replay import OffPolicyReplayBuffer
 from TrackToLearn.utils.torch_utils import get_device
+from TrackToLearn.algorithms.shared.kl import AdaptiveKLController, FixedKLController
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20
 
+@dataclass
+class SACAutoHParams:
+    lr: float = 3e-4
+    gamma: float = 0.99
+    n_actors: int = 4096
+
+    alpha: float = 0.2
+    batch_size: int = 2**12
+    replay_size: int = 1e6
+
+    adaptive_kl: bool = False
+    kl_penalty_coeff: float = 0.02
+    kl_target: float = 0.005
+    kl_horizon: int = 1000
 
 class SACAuto(SAC):
     """
@@ -39,12 +54,7 @@ class SACAuto(SAC):
         input_size: int,
         action_size: int,
         hidden_dims: int,
-        lr: float = 3e-4,
-        gamma: float = 0.99,
-        alpha: float = 0.2,
-        n_actors: int = 4096,
-        batch_size: int = 2**12,
-        replay_size: int = 1e6,
+        hparams: SACAutoHParams = SACAutoHParams(),
         rng: np.random.RandomState = None,
         device: torch.device = get_device,
     ):
@@ -74,34 +84,56 @@ class SACAuto(SAC):
         device: torch.device
             Device to use for the algorithm. Should be either "cuda:0"
         """
+        self.hparams = hparams
+        
+        # TO REMOVE
+        self.batch_size = hparams.batch_size
+        self.gamma = hparams.gamma
+        self.alpha = hparams.alpha
+        self.n_actors = hparams.n_actors
+        self.replay_size = hparams.replay_size
 
         self.max_action = 1.
         self.t = 1
 
         self.action_size = action_size
-        self.lr = lr
-        self.gamma = gamma
         self.device = device
-        self.n_actors = n_actors
 
         self.rng = rng
+
+        def _assert_same_weights(model1, model2):
+            for p1, p2 in zip(model1.parameters(), model2.parameters()):
+                assert torch.all(torch.eq(p1, p2))
 
         # Initialize main agent
         self.agent = SACActorCritic(
             input_size, action_size, hidden_dims, device,
         )
+        self.old_agent = copy.deepcopy(self.agent.actor)
+        _assert_same_weights(self.agent.actor, self.old_agent)
+
+        def _post_state_dict_agent_hook(module, incompatible_keys):
+            """
+            Since we are initializing the current and the reference policy
+            with the same weights, we need to make sure that when there's a
+            checkpoint loaded for the current policy (initially), the reference
+            should also be updated with the same weights.
+            """
+            self.old_agent.load_state_dict(self.agent.actor.state_dict())
+
+        self.agent.actor.register_load_state_dict_post_hook(_post_state_dict_agent_hook)
 
         # Auto-temperature adjustment
         # SAC automatically adjusts the temperature to maximize entropy and
         # thus exploration, but reduces it over time to converge to a
         # somewhat deterministic policy.
-        starting_temperature = np.log(alpha)  # Found empirically
+        starting_temperature = np.log(self.hparams.alpha)  # Found empirically
         self.target_entropy = -np.prod(action_size).item()
         self.log_alpha = torch.full(
             (1,), starting_temperature, requires_grad=True, device=device)
         # Optimizer for alpha
         self.alpha_optimizer = torch.optim.Adam(
-            [self.log_alpha], lr=lr)
+            [self.log_alpha], lr=self.hparams.lr)
 
         # Initialize target agent to provide baseline
         self.target = copy.deepcopy(self.agent)
@@ -109,14 +141,11 @@ class SACAuto(SAC):
         # SAC requires a different model for actors and critics
         # Optimizer for actor
         self.actor_optimizer = torch.optim.Adam(
-            self.agent.actor.parameters(), lr=lr)
+            self.agent.actor.parameters(), lr=self.hparams.lr)
 
         # Optimizer for critic
         self.critic_optimizer = torch.optim.Adam(
-            self.agent.critic.parameters(), lr=lr)
-
-        # Temperature
-        self.alpha = alpha
+            self.agent.critic.parameters(), lr=self.hparams.lr)
 
         # SAC-specific parameters
         self.max_action = 1.
@@ -127,14 +156,51 @@ class SACAuto(SAC):
         self.tau = 0.005
         self.agent_freq = 1
 
-        self.batch_size = batch_size
-        self.replay_size = replay_size
-
         # Replay buffer
         self.replay_buffer = OffPolicyReplayBuffer(
-            input_size, action_size, max_size=self.replay_size)
+            input_size, action_size, max_size=self.hparams.replay_size)
 
         self.rng = rng
+
+        if self.hparams.adaptive_kl:
+            self.kl_penalty_ctrler = AdaptiveKLController(
+                self.hparams.kl_penalty_coeff, self.hparams.kl_target, self.hparams.kl_horizon)
+        else:
+            self.kl_penalty_ctrler = FixedKLController(self.hparams.kl_penalty_coeff)
+
+    def load_checkpoint(self, checkpoint_file: str):
+        """
+        Load a checkpoint into the algorithm.
+
+        Parameters
+        ----------
+        checkpoint: dict
+            Dictionary containing the checkpoint to load.
+        """
+        checkpoint = torch.load(checkpoint_file)
+
+        self.agent.load_checkpoint(checkpoint['agent'])
+        self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
+        self.critic_optimizer.load_state_dict(checkpoint['critic_optimizer'])
+        self.alpha_optimizer.load_state_dict(checkpoint['alpha_optimizer'])
+
+    def save_checkpoint(self, checkpoint_file: str):
+        """
+        Save the current state of the algorithm into a checkpoint.
+
+        Parameters
+        ----------
+        checkpoint_file: str
+            File to save the checkpoint into.
+        """
+        checkpoint = {
+            'agent': self.agent.state_dict(as_dict=True),
+            'actor_optimizer': self.actor_optimizer.state_dict(),
+            'critic_optimizer': self.critic_optimizer.state_dict(),
+            'alpha_optimizer': self.alpha_optimizer.state_dict(),
+        }
+
+        torch.save(checkpoint, checkpoint_file)
 
     def update(
         self,

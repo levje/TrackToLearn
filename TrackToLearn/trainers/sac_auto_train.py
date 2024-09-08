@@ -9,7 +9,7 @@ import torch
 from comet_ml import Experiment as CometExperiment
 from comet_ml import OfflineExperiment as CometOfflineExperiment
 
-from TrackToLearn.algorithms.sac_auto import SACAuto
+from TrackToLearn.algorithms.sac_auto import SACAuto, SACAutoHParams
 from TrackToLearn.trainers.train import (TrackToLearnTraining,
                                          add_training_args)
 from TrackToLearn.utils.torch_utils import get_device
@@ -44,6 +44,29 @@ class SACAutoTrackToLearnTraining(TrackToLearnTraining):
         self.alpha = sac_auto_train_dto['alpha']
         self.batch_size = sac_auto_train_dto['batch_size']
         self.replay_size = sac_auto_train_dto['replay_size']
+        self.adaptive_kl = sac_auto_train_dto.get('adaptive_kl', None)
+        self.kl_penalty_coeff = sac_auto_train_dto.get('kl_penalty_coeff', None)
+        self.kl_target = sac_auto_train_dto.get('kl_target', None)
+        self.kl_horizon = sac_auto_train_dto.get('kl_horizon', None)
+
+        kl_kwargs = {}
+        if self.adaptive_kl:
+            kl_kwargs = {
+                'adaptive_kl': self.adaptive_kl,
+                'kl_penalty_coeff': self.kl_penalty_coeff,
+                'kl_target': self.kl_target,
+                'kl_horizon': self.kl_horizon
+            }
+
+        self.sac_auto_hparams = SACAutoHParams(
+            self.lr,
+            self.gamma,
+            self.n_actor,
+            self.alpha,
+            self.batch_size,
+            self.replay_size,
+            **kl_kwargs
+        )
 
     def save_hyperparameters(self):
         """ Add SACAuto-specific hyperparameters to self.hyperparameters
@@ -63,12 +86,7 @@ class SACAutoTrackToLearnTraining(TrackToLearnTraining):
             self.input_size,
             self.action_size,
             self.hidden_dims,
-            self.lr,
-            self.gamma,
-            self.alpha,
-            self.n_actor,
-            self.batch_size,
-            self.replay_size,
+            self.sac_auto_hparams,
             self.rng,
             device)
         return alg
