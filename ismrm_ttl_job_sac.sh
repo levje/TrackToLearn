@@ -15,7 +15,7 @@ islocal=1
 # Expriment parameters
 EXPNAME="TrackToLearn"
 COMETPROJECT="TrackToLearn"
-EXPID="SAC-WithOracle-"_$(date +"%F-%H_%M_%S")
+EXPID="SAC-Pretrain-ckpt-"_$(date +"%F-%H_%M_%S")
 MAXEP=1000
 BATCHSIZE=4096
 SEEDS=(1111)
@@ -43,7 +43,8 @@ if [ $islocal -eq 1 ]; then
     # ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
     # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
+    AGENTCHECKPOINT=data/experiments/TrackToLearn/SAC-Pretrain-ckpt-_2024-09-06-17_29_33/1111/model/last_model_state.ckpt
+    # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -81,9 +82,6 @@ do
     DEST_FOLDER="${EXPDIR}/${EXPNAME}/${EXPID}/${RNGSEED}"
 
     additionnal_args=()
-    if [ $RUN_OFFLINE -eq 1 ]; then
-        additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
-    fi
 
     # --oracle_checkpoint ${ORACLECHECKPOINT} \
     # --oracle_validator \
@@ -98,7 +96,10 @@ do
         "${DATASETDIR}/ismrm2015.hdf5" \
         --max_ep ${MAXEP} \
         --hidden_dims "1024-1024-1024" \
-        --oracle_bonus 0.0 \
+        --oracle_checkpoint ${ORACLECHECKPOINT} \
+        --oracle_validator \
+        --oracle_stopping_criterion \
+        --oracle_bonus 10.0 \
         --scoring_data "${DATASETDIR}/scoring_data" \
         --tractometer_reference "${DATASETDIR}/scoring_data/t1.nii.gz" \
         --tractometer_validator \

@@ -65,6 +65,7 @@ if [ $islocal -eq 1 ]; then
     # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
     ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
     # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
+    AGENTCHECKPOINT=data/experiments/TrackToLearn/SAC-Pretrain-ckpt-_2024-09-06-17_29_33/1111/model/last_model_state.ckpt
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -167,10 +168,11 @@ do
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --alg ${ALG} \
-        --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
+        --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/new_dataset.hdf5" \
         "${additionnal_args[@]}"
         # --disable_oracle_training \
-        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5"
+        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5" \
+        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
 
     # POST-PROCESSING
     bash scripts/tractogram_post_processing.sh ${DEST_FOLDER} ${DATASETDIR}
