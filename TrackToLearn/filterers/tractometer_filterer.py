@@ -43,13 +43,13 @@ class TractometerFilterer(Filterer):
 
     def __call__(self, tractogram, out_dir, scored_extension="trk"):
         assert os.path.exists(tractogram), f"Tractogram {tractogram} does not exist."
-        filtered_path = os.path.join(out_dir, "scored_{}.{}".format(Path(tractogram).stem, scored_extension))
+        filtered_path_valid = os.path.join(out_dir, "valid_scored_{}.{}".format(Path(tractogram).stem, scored_extension))
+        filtered_path_invalid = os.path.join(out_dir, "invalid_scored_{}.{}".format(Path(tractogram).stem, scored_extension))
         sft = load_tractogram(tractogram, self.reference,
                             bbox_valid_check=True, trk_header_check=True)
         
         if len(sft.streamlines) == 0:
-            save_tractogram(sft, filtered_path)
-            return filtered_path
+            return (sft, sft)
 
         args_mocker = namedtuple('args', [
             'compute_ic', 'save_wpc_separately', 'unique', 'reference',
@@ -69,13 +69,22 @@ class TractometerFilterer(Filterer):
                 self.abs_orientation_lengths, self.inv_all_masks, self.any_masks,
                 self.list_rois, args)
             
-            scored_tractogram = self._merge_with_scores(vb_sft_list, nc_sft, filtered_path)
-            save_tractogram(scored_tractogram, filtered_path) # Replace saving with directly putting that data into a hdf5 file.
+            valid, invalid = self._merge_with_scores(vb_sft_list, nc_sft)
+            
+            # Replace saving with directly putting that data into a hdf5 file.
+            save_tractogram(valid, filtered_path_valid)
+            save_tractogram(invalid, filtered_path_invalid)
 
-        return scored_tractogram
+        return valid, invalid
 
-    def _merge_with_scores(self, vb_sft_list, inv_tractogram, output):
-        """Merge the streamlines with the scores."""
+    def _merge_with_scores(self, vb_sft_list, inv_tractogram, merge_valid_invalid=False):
+        """
+        Merge the streamlines with the scores.
+
+        Returns: (main_trackogram, inv_tractogram)
+        To concatenate the two, use merge_valid_invalid=True. That will cause
+        the function to return a single tractogram with all the streamlines and their scores.
+        """
         main_tractogram = None
 
         # Add valid streamlines
@@ -89,12 +98,14 @@ class TractometerFilterer(Filterer):
             else:
                 main_tractogram = main_tractogram + bundle
 
-
         # Add invalid streamlines
         num_streamlines = len(inv_tractogram.streamlines)
         if num_streamlines > 0:
             inv_tractogram.data_per_streamline['score'] = np.zeros(num_streamlines, dtype=np.float32)
 
-        main_tractogram = main_tractogram + inv_tractogram if main_tractogram is not None else inv_tractogram
-        return main_tractogram
+        if merge_valid_invalid:
+            output = main_tractogram + inv_tractogram if main_tractogram is not None else inv_tractogram
+        else:
+            output = (main_tractogram, inv_tractogram)
+        return output
         

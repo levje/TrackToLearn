@@ -19,16 +19,19 @@ class StreamlineBatchDataset(Dataset):
     def __init__(
         self,
         file_path: str,
+        stage: str,
         noise: float = 0.1,
         flip_p: float = 0.5,
         dense: bool = True,
-        partial: bool = False
+        partial: bool = False,
     ):
         """
         Parameters:
         -----------
         file_path: str
             Path to the hdf5 file containing the streamlines
+        stage: str
+            The stage of the dataset. Should be either 'train' or 'test'.
         noise: float, optional
             Standard deviation of the Gaussian noise to add to the
             streamline points
@@ -47,10 +50,15 @@ class StreamlineBatchDataset(Dataset):
         self.flip_p = flip_p
         self.dense = dense
         self.partial = partial
+
+        assert stage in ["train", "test"], \
+            "The stage should be either 'train' or 'test'."
+        
+        self.stage = stage
         f = self.archives
         self.input_size = self._compute_input_size()
 
-        streamlines = f['streamlines']['data']
+        streamlines = f[self.stage]['data']
         self.length = len(streamlines)
 
     def _compute_input_size(self):
@@ -110,7 +118,7 @@ class StreamlineBatchDataset(Dataset):
         f = self.archives
 
         # Get the streamlines and their scores
-        hdf_subject = f['streamlines']
+        hdf_subject = f[self.stage]
         data = hdf_subject['data']
         scores_data = hdf_subject['scores']
 

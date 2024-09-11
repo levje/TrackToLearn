@@ -357,8 +357,8 @@ class RlhfRefactored(TrackToLearnTraining):
         filtered_tractograms = []
         for tractogram in tractograms:
             # TODO: Implement for more than one filterer
-            filtered_tractogram = filterer(tractogram, out_dir, scored_extension="trk")
-            filtered_tractograms.append(filtered_tractogram)
+            valid_tractogram, invalid_tractogram = filterer(tractogram, out_dir, scored_extension="trk")
+            filtered_tractograms.append((valid_tractogram, invalid_tractogram))
         
         return filtered_tractograms
     

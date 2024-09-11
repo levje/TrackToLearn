@@ -518,3 +518,33 @@ class PPO(RLAlgorithm):
             running_reward_factors,
             running_mean_ratio
             )
+    
+    def load_checkpoint(self, checkpoint_file: str):
+        """
+        Load a checkpoint into the algorithm.
+
+        Parameters
+        ----------
+        checkpoint: dict
+            Dictionary containing the checkpoint to load.
+        """
+        checkpoint = torch.load(checkpoint_file)
+
+        self.agent.load_checkpoint(checkpoint['agent'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+    def save_checkpoint(self, checkpoint_file: str):
+        """
+        Save the current state of the algorithm into a checkpoint.
+
+        Parameters
+        ----------
+        checkpoint_file: str
+            File to save the checkpoint into.
+        """
+        checkpoint = {
+            'agent': self.agent.state_dict(as_dict=True),
+            'optimizer': self.optimizer.state_dict(),
+        }
+
+        torch.save(checkpoint, checkpoint_file)
