@@ -48,7 +48,11 @@ class StreamlineDataModule(object):
         }
         
         num_streamlines = len(StreamlineBatchDataset(self.dataset_file, stage="train"))
-        self.indices = torch.arange(num_streamlines)
+        self.indices = np.arange(num_streamlines)
+
+        # This might break and shuffle some unwanted zeros.
+        # np.random.shuffle(self.indices)
+        
         self.train_indices = self.indices[:int(0.8 * num_streamlines)] # 80% of the training data is used for training
         self.valid_indices = self.indices[int(0.8 * num_streamlines):] # 20% of the training data is used for validation
         # self.test_indices = self.indices[int(0.9 * num_streamlines):]

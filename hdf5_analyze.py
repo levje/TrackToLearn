@@ -32,6 +32,15 @@ def check_for_nulls(streamlines: np.ndarray, scores: np.ndarray):
     non_null_idx = streamlines_idx[np.all((streamlines[start_by_zero_idxs, :, :] != 0), axis=2)]
     print("Indices of non-null points in streamlines starting by zero:", non_null_idx)
 
+    # Some streamlines are all zeros, print their associated scores (N, 128, 3)
+    full_zero_streamlines = np.all(streamlines == 0, axis=(1, 2))
+    
+    full_zero_indices = np.arange(nb_streamlines)[full_zero_streamlines]
+    print("Indices where all points in the streamlines are zeros:", full_zero_indices)
+    
+    full_zero_streamlines_scores = scores[full_zero_indices]
+    print(f"Scores of streamlines where all points are zeros ({full_zero_streamlines_scores.sum()} positive, {len(full_zero_streamlines_scores) - full_zero_streamlines_scores.sum()} negative): {full_zero_streamlines_scores}")
+
 
 def print_balance(streamlines: np.ndarray, scores: np.ndarray):
     # Print the number of streamlines

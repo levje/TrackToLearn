@@ -180,6 +180,7 @@ class SACAuto(SAC):
         checkpoint = torch.load(checkpoint_file)
 
         self.agent.load_checkpoint(checkpoint['agent'])
+        self.target.load_checkpoint(checkpoint['target'])
         self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
         self.critic_optimizer.load_state_dict(checkpoint['critic_optimizer'])
         self.alpha_optimizer.load_state_dict(checkpoint['alpha_optimizer'])
@@ -195,6 +196,7 @@ class SACAuto(SAC):
         """
         checkpoint = {
             'agent': self.agent.state_dict(as_dict=True),
+            'target': self.target.state_dict(as_dict=True),
             'actor_optimizer': self.actor_optimizer.state_dict(),
             'critic_optimizer': self.critic_optimizer.state_dict(),
             'alpha_optimizer': self.alpha_optimizer.state_dict(),

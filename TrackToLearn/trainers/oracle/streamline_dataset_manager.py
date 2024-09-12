@@ -46,7 +46,7 @@ class StreamlineDatasetManager(object):
 
         if dataset_to_augment_path is not None:
             print("Loading the dataset to augment: ", dataset_to_augment_path)
-            self.current_nb_streamlines = self._load_and_verify_streamline_dataset(dataset_to_augment_path)
+            self.current_train_nb_streamlines, self.current_test_nb_streamlines = self._load_and_verify_streamline_dataset(dataset_to_augment_path)
 
             if not augment_in_place:
                 # We don't want to modify the original dataset, so we copy it to the saving_path
@@ -55,7 +55,8 @@ class StreamlineDatasetManager(object):
                 # Copy the dataset to the saving path
                 with h5py.File(dataset_to_augment_path, 'r') as original:
                     with h5py.File(self.dataset_file_path, 'w') as target:
-                        original.copy('streamlines', target)
+                        original.copy('train', target)
+                        original.copy('test', target)
                         target.attrs['version'] = original.attrs['version']
                         target.attrs['nb_points'] = original.attrs['nb_points']
             else:
@@ -171,8 +172,8 @@ class StreamlineDatasetManager(object):
                 test_group['scores'].resize(self.current_test_nb_streamlines + test_nb_streamlines, axis=0)
 
             # Indices where to add the streamlines in the file (contiguous at the end of array).
-            file_train_indices = np.arange(self.current_train_nb_streamlines, train_nb_streamlines)
-            file_test_indices = np.arange(self.current_test_nb_streamlines, test_nb_streamlines)
+            file_train_indices = np.arange(self.current_train_nb_streamlines, self.current_train_nb_streamlines + train_nb_streamlines)
+            file_test_indices = np.arange(self.current_test_nb_streamlines, self.current_test_nb_streamlines + test_nb_streamlines)
 
             np.random.shuffle(file_train_indices)
             np.random.shuffle(file_test_indices)
@@ -257,16 +258,24 @@ class StreamlineDatasetManager(object):
 
     def _load_and_verify_streamline_dataset(self, dataset_to_augment_path: str):
         """ Verify the dataset in the hdf5 file."""
+        def get_group_size(group):
+            if 'data' not in group:
+                raise ValueError(f"The dataset ({group}) does not contain the 'data' group.")
+            
+            if 'scores' not in group:
+                raise ValueError(f"The dataset ({group}) does not contain the 'scores' group.")
+            
+            return group['scores'].shape[0]
+            
         with h5py.File(dataset_to_augment_path, 'r') as dataset:
-            if 'streamlines' not in dataset:
-                raise ValueError("The dataset does not contain the 'streamlines' group.")
-            
-            streamlines_group = dataset['streamlines']
 
-            if 'data' not in streamlines_group:
-                raise ValueError("The dataset does not contain the 'data' group.")
+            has_train = 'train' in dataset
+            has_test = 'test' in dataset
+
+            if not has_train and not has_test:
+                raise ValueError("The dataset does not contain the 'train' or 'test' groups.")
             
-            if 'scores' not in streamlines_group:
-                raise ValueError("The dataset does not contain the 'scores' group.")
+            train_size = get_group_size(dataset['train']) if has_train else 0
+            test_size = get_group_size(dataset['test']) if has_test else 0
             
-            return streamlines_group['data'].shape[0]
+            return train_size, test_size
