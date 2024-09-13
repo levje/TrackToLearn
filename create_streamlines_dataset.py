@@ -30,6 +30,7 @@ def generate_dataset(
     # Get the dataset_file folder
     dataset_folder = os.path.dirname(dataset_file)
     dataset_name = os.path.basename(dataset_file)
+    dataset_dir = os.path.abspath(os.path.join(os.path.dirname(config_file), os.pardir))
 
     dataset_manager = StreamlineDatasetManager(saving_path=dataset_folder, dataset_name=dataset_name)
     with open(config_file, "r") as conf:
@@ -48,21 +49,18 @@ def generate_dataset(
             subject = config[subject_id]
             streamlines_files_list = subject["streamlines"]
 
-            print(streamlines_files_list[0])
-            expanded = expanduser(streamlines_files_list[0])
+            streamlines_files_exp = add_path_prefix_if_needed(dataset_dir, streamlines_files_list[0])
+            expanded = expanduser(streamlines_files_exp)
             streamlines_files = glob(expanded)
-            print("expanded : {}".format(expanded))
-            print("streamlines_files : {}".format(streamlines_files))
-            reference_anat = subject["reference"]
+            reference_anat = add_path_prefix_if_needed(dataset_dir, subject["reference"])
 
             tractograms = []
             for streamlines_file in streamlines_files:
-                print("Considering streamlines from file : {}".format(streamlines_file))
+                print("Loading streamlines from file : {}".format(streamlines_file))
                 valid_streamlines, invalid_streamlines = load_streamlines(streamlines_file, reference_anat)
                 tractograms.append((valid_streamlines, invalid_streamlines))
             
             assert tractograms, "No streamlines were loaded for subject {}".format(subject_id)
-            print("Adding tractograms to dataset...")
             dataset_manager.add_tractograms_to_dataset(tractograms)
 
     print("Saved dataset : {}".format(dataset_file))
@@ -96,6 +94,23 @@ def load_streamlines(
     invalid_indices = indices[scores == 0]
 
     return sft[valid_indices], sft[invalid_indices]
+
+def add_path_prefix_if_needed(path_prefix: str, file: str) -> str:
+    """ Add the path to the configuration file if it is not an absolute path.
+
+    Parameters:
+    -----------
+    config_file: str
+        Path to the configuration file.
+
+    Returns:
+    --------
+    str
+        The absolute path to the configuration file.
+    """
+    if not os.path.isabs(file):
+        return os.path.abspath(os.path.join(path_prefix, file))
+    return file
 
 def parse_args():
 
