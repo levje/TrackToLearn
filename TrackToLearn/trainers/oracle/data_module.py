@@ -47,24 +47,24 @@ class StreamlineDataModule(object):
             'pin_memory': get_device_str() == 'cuda',
         }
         
+
+        # Select a random distribution of indices for the training and validation sets.
         num_streamlines = len(StreamlineBatchDataset(self.dataset_file, stage="train"))
         self.indices = np.arange(num_streamlines)
-
-        # This might break and shuffle some unwanted zeros.
-        # np.random.shuffle(self.indices)
+        np.random.shuffle(self.indices)
         
         self.train_indices = self.indices[:int(0.8 * num_streamlines)] # 80% of the training data is used for training
         self.valid_indices = self.indices[int(0.8 * num_streamlines):] # 20% of the training data is used for validation
-        # self.test_indices = self.indices[int(0.9 * num_streamlines):]
+
+        # Accessing elements in an HDF5 file requires indices
+        # to be accessed in increasing order.
+        self.train_indices = np.sort(self.train_indices)
+        self.valid_indices = np.sort(self.valid_indices)
 
         assert len(self.train_indices) > 0 and \
                len(self.valid_indices) > 0, \
             "The dataset is too small to be split into train, validation and test sets." \
             f"Train: {len(self.train_indices)} Val: {len(self.valid_indices)} Test: {len(self.test_indices)}"
-
-    def prepare_data(self):
-        # pass ?
-        pass
 
     def setup(self, stage: str):
 

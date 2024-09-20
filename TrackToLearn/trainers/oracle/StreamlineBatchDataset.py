@@ -50,6 +50,7 @@ class StreamlineBatchDataset(Dataset):
         self.flip_p = flip_p
         self.dense = dense
         self.partial = partial
+        self.is_sorted = lambda a: np.all(a[:-1] <= a[1:])
 
         assert stage in ["train", "test"], \
             "The stage should be either 'train' or 'test'."
@@ -122,24 +123,29 @@ class StreamlineBatchDataset(Dataset):
         data = hdf_subject['data']
         scores_data = hdf_subject['scores']
 
-        # Start and end indices. Presume that the indices are sorted
-        # and sequential.
-        start, end = indices[0], indices[-1] + 1
+        # Start and end indices. Presume that the indices are sorted.
+        # TODO: Remove the following assumption.
+        # Also, presume that the indices are SEQUENTIAL.
+        # start, end = indices[0], indices[-1] + 1
 
         # Handle rollover indices
-        if start > end:
-            # Concatenate the two parts
-            batch_end = max(indices)
-            batch_start = min(indices)
-            streamlines = np.concatenate(
-                (data[start:batch_end], data[batch_start:end]), axis=0)
-            score = np.concatenate(
-                (scores_data[start:batch_end], scores_data[batch_start:end]),
-                axis=0)
+        # if start > end:
+        #     # Concatenate the two parts
+        #     batch_end = max(indices)
+        #     batch_start = min(indices)
+        #     streamlines = np.concatenate(
+        #         (data[start:batch_end], data[batch_start:end]), axis=0)
+        #     score = np.concatenate(
+        #         (scores_data[start:batch_end], scores_data[batch_start:end]),
+        #         axis=0)
         # Slice as usual
-        else:
-            streamlines = data[start:end]
-            score = scores_data[start:end]
+        # else:
+
+        if not self.is_sorted(indices):
+            indices = np.sort(indices)
+
+        streamlines = data[indices]
+        score = scores_data[indices]
 
         # Flip streamline for robustness
         # Ideally, a proportion p of the streamlines should be flipped

@@ -115,6 +115,7 @@ class OracleTrainer(object):
 
                     # Train step
                     loss, train_info, matrix = self.oracle_model.training_step(batch, i)
+                    batch = to_device(batch, 'cpu')
                     add_item_to_means(train_metrics, train_info)
                     train_metrics['lr'].append(torch.tensor(self.optimizer.param_groups[0]['lr']))
                     add_item_to_means(train_matrix, matrix)
@@ -162,6 +163,7 @@ class OracleTrainer(object):
             _, val_info, matrix = self.oracle_model.validation_step(batch, i)
             if val_info['val_f1'] == 0:
                 print("F1 score is 0")
+            batch = to_device(batch, 'cpu')
             add_item_to_means(val_metrics, val_info)
             add_item_to_means(val_matrix, matrix)
 

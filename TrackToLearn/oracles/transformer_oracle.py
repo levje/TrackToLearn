@@ -138,7 +138,7 @@ class TransformerOracle(LightningLikeModule):
             if "scaler" in checkpoint.keys():
                 scaler.load_state_dict(checkpoint["scaler"])
 
-        elif self.checkpoint_state_dicts is not None:
+        elif hasattr(self, 'checkpoint_state_dicts') and self.checkpoint_state_dicts is not None:
             optimizer.load_state_dict(self.checkpoint_state_dicts["optimizer"])
             scheduler.load_state_dict(self.checkpoint_state_dicts["scheduler"])
 
