@@ -16,11 +16,11 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="RLHF-PT-SAC_"_$(date +"%F-%H_%M_%S")
+EXPID="BoboshOracle3_noInitDS_"_$(date +"%F-%H_%M_%S")
 ALG="SACAuto"
 RLHFINTERNPV=30         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
-ORACLENBSTEPS=3         # Number of steps for the oracle
+ORACLENBSTEPS=2         # Number of steps for the oracle
 AGENTNBSTEPS=100        # Number of steps for the agent
 PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
@@ -61,11 +61,22 @@ if [ $islocal -eq 1 ]; then
         PYTHONEXEC=~/miniconda3/envs/$1/bin/python
     fi
     DATASETDIR=$DATADIR
+    
+    # PPO Checkpoints
     # ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
     # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
-    ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    
+    # Oracle Antoine
+    # ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+
+    # Oracle 3 epochs
+    ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-3-epochs/Bobosh-OracleNet-Transformer-3-epochs.ckpt
+
+    # Oracle 25 epochs 
+    # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-25-epochs/Bobosh-OracleNet-Transformer-25-epochs.ckpt
+
     # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
-    AGENTCHECKPOINT=data/experiments/TrackToLearn/SAC-Pretrain-ckpt-_2024-09-06-17_29_33/1111/model/last_model_state.ckpt
+    AGENTCHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/custom_models/sac_checkpoint/model/last_model_state.ckpt
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -75,8 +86,6 @@ else
     LOGSDIR=$SLURM_TMPDIR/logs
     PYTHONEXEC=python
     export COMET_API_KEY=$(cat ~/.comet_api_key)
-
-    ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
 
     # Prepare virtualenv
     echo "Sourcing ENV-TTL-2 virtual environment..."
@@ -91,11 +100,14 @@ else
     DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
-    cp ~/projects/def-pmjodoin/levj1404/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    # cp ~/projects/def-pmjodoin/levje/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-3-epochs.ckpt $DATADIR
+    cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-25-epochs.ckpt $DATADIR
     
     echo "Copying agent checkpoint..."
     cp ~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/* $DATADIR
     AGENTCHECKPOINT=~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13
+    ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
 fi
 
 for RNGSEED in "${SEEDS[@]}"
@@ -168,9 +180,10 @@ do
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --alg ${ALG} \
-        --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/new_dataset.hdf5" \
         "${additionnal_args[@]}"
+        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/train_test_classical_tracts_dataset.hdf5" \
         # --disable_oracle_training \
+        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/new_dataset.hdf5" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5" \
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
 
