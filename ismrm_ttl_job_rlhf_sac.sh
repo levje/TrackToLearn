@@ -11,7 +11,6 @@ set -e
 
 # Set this to 0 if running on a cluster node.
 islocal=1
-RUN_OFFLINE=0
 
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
@@ -101,7 +100,7 @@ else
     mkdir -p $EXPDIR
 
     echo "Unpacking datasets..."
-    tar xf ~/projects/def-pmjodoin/levj1404/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
+    tar xf ~/projects/def-pmjodoin/levje/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
     DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
@@ -110,8 +109,8 @@ else
     cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-25-epochs.ckpt $DATADIR
     
     echo "Copying agent checkpoint..."
-    cp ~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/* $DATADIR
-    AGENTCHECKPOINT=~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13
+    cp ~/projects/def-pmjodoin/levje/agents/sac_checkpoint/* $DATADIR/sac_checkpoint
+    AGENTCHECKPOINT=$DATADIR/sac_checkpoint/last_model_state.ckpt
     ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
 fi
 
@@ -120,10 +119,6 @@ do
     DEST_FOLDER="${EXPDIR}/${EXPNAME}/${EXPID}/${RNGSEED}"
 
     additionnal_args=()
-    if [ $RUN_OFFLINE -eq 1 ]; then
-        additionnal_args+=('--comet_offline_dir' "${LOGSDIR}")
-    fi
-
     if [ -n "$AGENTCHECKPOINT" ]; then
         additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
     else
