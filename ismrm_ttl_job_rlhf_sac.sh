@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=6
-#SBATCH --mem=40000M
-#SBATCH --time=0-40:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=22000M
+#SBATCH --time=0-25:00:00
 #SBATCH --mail-user=jeremi.levesque@usherbrooke.ca
 #SBATCH --mail-type=ALL
 
@@ -15,7 +15,7 @@ islocal=1
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="BoboshOracle25_noInitDS_"_$(date +"%F-%H_%M_%S")
+EXPID="BoboshOracle25_noInitDS_GradAccum_"_$(date +"%F-%H_%M_%S")
 ALG="SACAuto"
 RLHFINTERNPV=30         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
@@ -105,13 +105,13 @@ else
 
     echo "Copying oracle checkpoint..."
     # cp ~/projects/def-pmjodoin/levje/oracles/ismrm_paper_oracle.ckpt $DATADIR
-    cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-3-epochs.ckpt $DATADIR
+    # cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-3-epochs.ckpt $DATADIR
     cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-25-epochs.ckpt $DATADIR
     
     echo "Copying agent checkpoint..."
     cp ~/projects/def-pmjodoin/levje/agents/sac_checkpoint/* $DATADIR/sac_checkpoint
     AGENTCHECKPOINT=$DATADIR/sac_checkpoint/last_model_state.ckpt
-    ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
+    ORACLECHECKPOINT=$DATADIR/Bobosh-OracleNet-Transformer-25-epochs.ckpt
 fi
 
 for RNGSEED in "${SEEDS[@]}"
