@@ -16,7 +16,7 @@ RUN_OFFLINE=0
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="BoboshOracle3_noInitDS_"_$(date +"%F-%H_%M_%S")
+EXPID="BoboshOracle25_noInitDS_"_$(date +"%F-%H_%M_%S")
 ALG="SACAuto"
 RLHFINTERNPV=30         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
@@ -30,6 +30,11 @@ BATCHSIZE=4096
 GAMMA=0.95 # Reward discounting (could also be 0.95)
 LR=0.0005 # 1e-5
 THETA=30
+
+# Oracle training params
+TOTAL_BATCH_SIZE=2048
+ORACLE_MICRO_BATCH_SIZE=512
+GRAD_ACCUM_STEPS=$((TOTAL_BATCH_SIZE / ORACLE_MICRO_BATCH_SIZE))
 
 # PPO hparams
 ENTROPY_LOSS_COEFF=0.0001 # Entropy bonus for policy loss
@@ -70,10 +75,10 @@ if [ $islocal -eq 1 ]; then
     # ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
 
     # Oracle 3 epochs
-    ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-3-epochs/Bobosh-OracleNet-Transformer-3-epochs.ckpt
+    # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-3-epochs/Bobosh-OracleNet-Transformer-3-epochs.ckpt
 
     # Oracle 25 epochs 
-    # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-25-epochs/Bobosh-OracleNet-Transformer-25-epochs.ckpt
+    ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-25-epochs/Bobosh-OracleNet-Transformer-25-epochs.ckpt
 
     # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
     AGENTCHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/custom_models/sac_checkpoint/model/last_model_state.ckpt
@@ -180,6 +185,8 @@ do
         --agent_train_steps ${AGENTNBSTEPS} \
         --rlhf_inter_npv ${RLHFINTERNPV} \
         --alg ${ALG} \
+        --oracle_batch_size ${ORACLE_MICRO_BATCH_SIZE} \
+        --grad_accumulation_steps ${GRAD_ACCUM_STEPS} \
         "${additionnal_args[@]}"
         # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/train_test_classical_tracts_dataset.hdf5" \
         # --disable_oracle_training \

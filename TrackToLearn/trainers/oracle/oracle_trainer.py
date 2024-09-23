@@ -22,6 +22,7 @@ class OracleTrainer(object):
         use_comet=True,
         enable_checkpointing=True,
         val_interval=1,
+        grad_accumulation_steps=1,
         device=get_device()
     ):
         self.experiment = experiment
@@ -40,6 +41,8 @@ class OracleTrainer(object):
             experiment_id=self.experiment_id,
             use_comet=use_comet
         )
+        self.grad_accumulation_steps = grad_accumulation_steps
+        assert self.grad_accumulation_steps > 0, "grad_accumulation_steps must be greater than 0"
 
     def setup_model_training(self, oracle_model: LightningLikeModule):
         """
@@ -104,18 +107,12 @@ class OracleTrainer(object):
                 train_metrics = defaultdict(list)
                 train_matrix = defaultdict(list)
                 for i, batch in enumerate(train_dataloader):
-                    
-                    # Breakpoint if the batch contains only zeros
-                    if torch.all(batch[0] == 0):
-                        print("Batch contains only zeros")
-
                     self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_START)
 
                     batch = to_device(batch, self.device)
 
                     # Train step
                     loss, train_info, matrix = self.oracle_model.training_step(batch, i)
-                    batch = to_device(batch, 'cpu')
                     add_item_to_means(train_metrics, train_info)
                     train_metrics['lr'].append(torch.tensor(self.optimizer.param_groups[0]['lr']))
                     add_item_to_means(train_matrix, matrix)
@@ -124,12 +121,22 @@ class OracleTrainer(object):
                     self.optimizer.zero_grad()
 
                     # Backward pass
-                    self.scaler.scale(loss).backward()
+                    self.scaler.scale(loss / self.grad_accumulation_steps).backward()
 
-                    # Update parameters
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                    self.scheduler.step()
+                    # Accumulate the gradients and update the parameters once
+                    # we accumulated self.grad_accumulation_steps gradients.
+                    # This number of steps should be calculated based on the batch size
+                    # and the GPU memory available.
+                    if (i + 1) % self.grad_accumulation_steps == 0:
+                        # Unscaling the gradients is required before clipping them.
+                        # Ref: https://pytorch.org/docs/main/notes/amp_examples.html#gradient-clipping
+                        self.scaler.unscale_(self.optimizer)
+                        _ = nn.utils.clip_grad_norm_(self.oracle_model.parameters(), 1.0)
+
+                        # Update parameters
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                        self.scheduler.step()
 
                     pbar.update()
                     self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_END)
@@ -150,33 +157,20 @@ class OracleTrainer(object):
         self.oracle_model = self.oracle_model.to('cpu')
 
     def _validate(self, val_dataloader, epoch, best_acc):
+        self.oracle_model.eval()
+        
         val_metrics = defaultdict(list)
         val_matrix = defaultdict(list)
         for i, batch in enumerate(val_dataloader):
-            if torch.all(batch[0] == 0):
-                print("Batch contains only zeros")
-
             batch = to_device(batch, self.device)
             self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_START)
 
             # TODO: Implement validation step
             _, val_info, matrix = self.oracle_model.validation_step(batch, i)
-            if val_info['val_f1'] == 0:
-                print("F1 score is 0")
-            batch = to_device(batch, 'cpu')
             add_item_to_means(val_metrics, val_info)
             add_item_to_means(val_matrix, matrix)
 
             self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_END)
-        
-        total = 0
-        number = len(val_metrics['val_f1'])
-        print("F1 scores: [", end='')
-        for f1 in val_metrics['val_f1']:
-            print(f1.item(), end=', ')
-            total += f1
-        print("]")
-        total = total / number
 
         val_metrics = mean_losses(val_metrics)
         self.oracle_monitor.log_metrics(val_metrics, self._global_epoch)
@@ -205,6 +199,8 @@ class OracleTrainer(object):
                 best_name = '{}/best_vc_epoch.ckpt'.format(self.saving_path, epoch)
                 torch.save(checkpoint_dict, best_name)
                 best_acc = best_acc
+        
+        self.oracle_model.train()
 
     def test(self, test_dataloader):
         self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TEST_START)

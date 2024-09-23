@@ -251,30 +251,30 @@ class TrackToLearnTraining(Experiment):
             prob=1.0, compress=0.0)
 
         # Run tracking before training to see what an untrained network does
-        # valid_env.load_subject()
-        # valid_tractogram, valid_reward = valid_tracker.track_and_validate(
-        #     valid_env)
-        # stopping_stats = self.stopping_stats(valid_tractogram)
-        # print(stopping_stats)
-        # if valid_tractogram:
-        #     if self.use_comet:
-        #         self.comet_monitor.log_losses(stopping_stats, i_episode)
+        valid_env.load_subject()
+        valid_tractogram, valid_reward = valid_tracker.track_and_validate(
+            valid_env)
+        stopping_stats = self.stopping_stats(valid_tractogram)
+        print(stopping_stats)
+        if valid_tractogram:
+            if self.use_comet:
+                self.comet_monitor.log_losses(stopping_stats, i_episode)
 
-        #     filename = self.save_rasmm_tractogram(valid_tractogram,
-        #                                           valid_env.subject_id,
-        #                                           valid_env.affine_vox2rasmm,
-        #                                           valid_env.reference,
-        #                                           save_dir=save_model_dir)
-        #     scores = self.score_tractogram(filename, valid_env)
-        #     print(scores)
+            filename = self.save_rasmm_tractogram(valid_tractogram,
+                                                  valid_env.subject_id,
+                                                  valid_env.affine_vox2rasmm,
+                                                  valid_env.reference,
+                                                  save_dir=save_model_dir)
+            scores = self.score_tractogram(filename, valid_env)
+            print(scores)
 
-        #     if self.use_comet:
-        #         self.comet_monitor.log_losses(scores, i_episode)
-        # self.save_model(alg, save_model_dir)
+            if self.use_comet:
+                self.comet_monitor.log_losses(scores, i_episode)
+        self.save_model(alg, save_model_dir)
 
-        # # Display the results of the untrained network
-        # self.log(
-        #     valid_tractogram, valid_reward, i_episode)
+        # Display the results of the untrained network
+        self.log(
+            valid_tractogram, valid_reward, i_episode)
 
         # Main training loop
         while i_episode < upper_bound:

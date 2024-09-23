@@ -3,7 +3,7 @@ import os
 from comet_ml import Experiment as CometExperiment
 
 from TrackToLearn.utils.torch_utils import assert_accelerator, get_device
-from TrackToLearn.oracles.transformer_oracle import LightningLikeModule, TransformerOracle
+from TrackToLearn.oracles.transformer_oracle import TransformerOracle
 from TrackToLearn.trainers.oracle.data_module import StreamlineDataModule
 from TrackToLearn.trainers.oracle.oracle_trainer import OracleTrainer
 
@@ -28,6 +28,7 @@ class TractOracleNetTraining(object):
         # Data loading parameters
         self.num_workers = train_dto['num_workers']
         self.oracle_batch_size = train_dto['oracle_batch_size']
+        self.grad_accumulation_steps = train_dto['grad_accumulation_steps']
 
         # Data files
         self.dataset_file = train_dto['dataset_file']
@@ -35,8 +36,13 @@ class TractOracleNetTraining(object):
         self.comet_workspace = train_dto['comet_workspace']
         self.device = get_device()
 
+
     def train(self):
         root_dir = os.path.join(self.experiment_path, self.experiment_name, self.id)
+
+        # Create the root directory if it doesn't exist
+        if not os.path.exists(root_dir):
+            os.makedirs(root_dir)
         
         # Get example input to define NN input size
         # 128 points directions -> 127 3D directions
@@ -50,12 +56,15 @@ class TractOracleNetTraining(object):
                 self.input_size, self.output_size, self.n_head,
                 self.n_layers, self.lr)
 
+        print("Creating Comet experiment {} at workspace {}...".format(self.experiment_name, self.comet_workspace), end=' ')
         oracle_experiment = CometExperiment(
             project_name=self.experiment_name,
             workspace=self.comet_workspace,
             parse_args=False,
             auto_metric_logging=False,
             disabled=not self.use_comet)
+        
+        print("Done.")
 
         oracle_trainer = OracleTrainer(
             oracle_experiment,
@@ -64,7 +73,8 @@ class TractOracleNetTraining(object):
             self.oracle_train_steps,
             enable_checkpointing=True,
             val_interval=1,
-            device=self.device
+            device=self.device,
+            grad_accumulation_steps=self.grad_accumulation_steps
         )
         oracle_trainer.setup_model_training(model)
         
@@ -81,6 +91,14 @@ class TractOracleNetTraining(object):
         dm.setup('test')
         oracle_trainer.test(test_dataloader=dm.test_dataloader())
     
+def add_oracle_train_args(parser):
+    parser.add_argument('--grad_accumulation_steps', type=int, default=1,
+                        help='Number of gradient accumulation steps. This is useful '
+                             'when the batch size is too large to fit in memory, but'
+                             'you still want to simulate a large batch size. The'
+                             'grads are accumulated over the specified number of steps'
+                             'before updating the weights.')
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=parse_args.__doc__)
@@ -112,6 +130,8 @@ def parse_args():
                             help='Comet workspace.')
     parser.add_argument('--use_comet', action='store_true',
                         help='Use comet for logging.')
+    
+    add_oracle_train_args(parser)
 
     return parser.parse_args()
     
