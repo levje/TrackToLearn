@@ -18,23 +18,21 @@ class OracleSingleton:
             cls._self = super().__new__(cls)
         return cls._self
 
-    def __init__(self, checkpoint: str, device: str, batch_size=4096):
+    def __init__(self, checkpoint: str, device: str, batch_size=4096, lr=None):
         self.checkpoint = torch.load(checkpoint, map_location=get_device())
 
+        # The model's class is saved in hparams
         hyper_parameters = self.checkpoint["hyper_parameters"]
-        # The model's class is saved in hparams
-        # The model's class is saved in hparams
         models = {
             'TransformerOracle': TransformerOracle
         }
 
         # Load it from the checkpoint
         self.model = models[hyper_parameters[
-            'name']].load_from_checkpoint(self.checkpoint).to(device)
+            'name']].load_from_checkpoint(self.checkpoint, lr).to(device)
 
         self.model.eval()
         self.batch_size = batch_size
-
         self.device = device
 
     def predict(self, streamlines):

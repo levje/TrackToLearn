@@ -176,13 +176,13 @@ class TransformerOracle(LightningLikeModule):
         return y.squeeze(-1)
 
     @classmethod
-    def load_from_checkpoint(cls, checkpoint: dict):
+    def load_from_checkpoint(cls, checkpoint: dict, lr: float = None):
 
         hyper_parameters = checkpoint["hyper_parameters"]
 
         input_size = hyper_parameters['input_size']
         output_size = hyper_parameters['output_size']
-        lr = hyper_parameters['lr']
+        lr = hyper_parameters['lr'] if lr is None else lr
         n_head = hyper_parameters['n_head']
         n_layers = hyper_parameters['n_layers']
         loss = hyper_parameters['loss']

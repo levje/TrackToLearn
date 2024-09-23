@@ -62,6 +62,7 @@ class RlhfRefactored(TrackToLearnTraining):
         assert self.pretrain_max_ep is not None or (self.agent_checkpoint_dir is not None or self.agent_checkpoint is not None), \
             "Either pretrain_max_ep or (agent_checkpoint | agent_checkpoint_dir) must be provided for RLHF training."
         
+        self.oracle_lr = rlhf_train_dto.get('oracle_lr', None)
         self.oracle_train_steps = rlhf_train_dto['oracle_train_steps']
         self.agent_train_steps = rlhf_train_dto['agent_train_steps']
         self.num_workers = rlhf_train_dto['num_workers']
@@ -183,7 +184,7 @@ class RlhfRefactored(TrackToLearnTraining):
                 alg.old_agent.load_state_dict(alg.agent.actor.state_dict()) # TODO: Refactor
         else:
             # The agent is already pretrained, just need to fine-tune it.
-            self.logger.info("Skipping pretraining procedure: loading agent from checkpoint...", end=" ")
+            self.logger.info("Skipping pretraining procedure: loading agent from checkpoint...")
             self._load_agent_checkpoint(alg)
             self.logger.info("Done.")
 
@@ -195,7 +196,8 @@ class RlhfRefactored(TrackToLearnTraining):
         # Setup oracle training
         self.oracle = OracleSingleton(self.oracle_checkpoint,
                                       device=self.device,
-                                      batch_size=self.oracle_batch_size)
+                                      batch_size=self.oracle_batch_size,
+                                      lr=self.oracle_lr)
         self.oracle_trainer.setup_model_training(self.oracle.model)
         
         # Setup environment
@@ -423,6 +425,9 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
 
     # Oracle training RLHF arguments
     oracle_group = rlhf_group.add_argument_group("Oracle Training Arguments")
+    oracle_group.add_argument('--oracle_lr', type=float,
+                              help='Learning rate to use for training the oracle.\n'
+                              'If not set, the lr stored in the checkpoint will be used.')
     oracle_group.add_argument('--oracle_train_steps', type=int, required=True,
                         help='Number of steps to fine-tune the oracle during RLHF training.')
     oracle_group.add_argument('--oracle_batch_size', type=int, default=2816,

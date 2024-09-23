@@ -31,6 +31,7 @@ LR=0.0005 # 1e-5
 THETA=30
 
 # Oracle training params
+ORACLE_LR=0.00005 # This will override the LR within the checkpoint.
 TOTAL_BATCH_SIZE=2048
 ORACLE_MICRO_BATCH_SIZE=512
 GRAD_ACCUM_STEPS=$((TOTAL_BATCH_SIZE / ORACLE_MICRO_BATCH_SIZE))
@@ -123,6 +124,11 @@ do
         additionnal_args+=('--agent_checkpoint' "${AGENTCHECKPOINT}")
     else
         additionnal_args+=('--pretrain_max_ep' "${PRETRAINSTEPS}")
+    fi
+
+    # If ORACLE_LR is set AND is higher than zero, add it to the arguments.
+    if [[ -n "${ORACLE_LR}" && $(echo "${ORACLE_LR} > 0" | bc -l) -eq 1 ]]; then
+        additionnal_args+=('--oracle_lr' "${ORACLE_LR}")
     fi
 
     if [ $ALG == "PPO" ]; then
