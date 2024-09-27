@@ -132,18 +132,18 @@ class TransformerOracle(LightningLikeModule):
         scaler = torch.cuda.amp.GradScaler(enabled=self.enable_amp)
 
         if checkpoint is not None:
-            optimizer.load_state_dict(checkpoint["optimizer_states"])
-            scheduler.load_state_dict(checkpoint["lr_schedulers"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
             
-            if "scaler" in checkpoint.keys():
-                scaler.load_state_dict(checkpoint["scaler"])
+            if "scaler_state_dict" in checkpoint.keys():
+                scaler.load_state_dict(checkpoint["scaler_state_dict"])
 
         elif hasattr(self, 'checkpoint_state_dicts') and self.checkpoint_state_dicts is not None:
-            optimizer.load_state_dict(self.checkpoint_state_dicts["optimizer"])
-            scheduler.load_state_dict(self.checkpoint_state_dicts["scheduler"])
+            optimizer.load_state_dict(self.checkpoint_state_dicts["optimizer_state_dict"])
+            scheduler.load_state_dict(self.checkpoint_state_dicts["scheduler_state_dict"])
 
-            if "scaler" in self.checkpoint_state_dicts.keys():
-                scaler.load_state_dict(self.checkpoint_state_dicts["scaler"])
+            if "scaler_state_dict" in self.checkpoint_state_dicts.keys():
+                scaler.load_state_dict(self.checkpoint_state_dicts["scaler_state_dict"])
 
         return {
             "optimizer": optimizer,
@@ -177,27 +177,68 @@ class TransformerOracle(LightningLikeModule):
 
     @classmethod
     def load_from_checkpoint(cls, checkpoint: dict, lr: float = None):
+        # Checkpoint is a dict with the following structure:
+        # {
+        #     "epoch": int,
+        #     "metrics": dict,
+        #     "hyperparameters": dict,
+        #     "model_state_dict": dict,
+        #     "optimizer_state_dict": dict,
+        #     "scheduler_state_dict": dict,
+        #     "scaler_state_dict": dict
+        # }
+        # However, we currently also support checkpoints coming from PyTorch Lightning.
+        # In that case, the checkpoint holds the key "pytorch-lightning_version". If the
+        # key is present, we assume the checkpoint is coming from PyTorch Lightning.
 
-        hyper_parameters = checkpoint["hyper_parameters"]
+        is_pl_checkpoint = "pytorch-lightning_version" in checkpoint.keys()
+        if is_pl_checkpoint:
+            # PyTorch Lightning checkpoint
+            hyper_parameters = checkpoint["hyper_parameters"]
 
-        input_size = hyper_parameters['input_size']
-        output_size = hyper_parameters['output_size']
-        lr = hyper_parameters['lr'] if lr is None else lr
-        n_head = hyper_parameters['n_head']
-        n_layers = hyper_parameters['n_layers']
-        loss = hyper_parameters['loss']
+            input_size = hyper_parameters['input_size']
+            output_size = hyper_parameters['output_size']
+            lr = hyper_parameters['lr'] if lr is None else lr
+            n_head = hyper_parameters['n_head']
+            n_layers = hyper_parameters['n_layers']
+            loss = hyper_parameters['loss']
 
-        model = TransformerOracle(
-            input_size, output_size, n_head, n_layers, lr, loss)
+            # Create and load the model
+            model = TransformerOracle(
+                input_size, output_size, n_head, n_layers, lr, loss)
+            model.load_state_dict(checkpoint["model_state_dict"])
+        
+            optimizer_state_dict = checkpoint["optimizer_states"][0]
+            scheduler_state_dict = checkpoint["lr_schedulers"][0]
 
-        model.load_state_dict(checkpoint["state_dict"])
+        else:
+            # Checkpoint based on the syntax of TransformerOracle.pack_for_checkpoint().
+            hyper_parameters = checkpoint["hyperparameters"]
+
+            input_size = hyper_parameters['input_size']
+            output_size = hyper_parameters['output_size']
+            lr = hyper_parameters['lr'] if lr is None else lr
+            n_head = hyper_parameters['n_head']
+            n_layers = hyper_parameters['n_layers']
+            loss = hyper_parameters['loss']
+
+            # Create and load the model
+            model = TransformerOracle(
+                input_size, output_size, n_head, n_layers, lr, loss)
+            model.load_state_dict(checkpoint["model_state_dict"])
+
+            optimizer_state_dict = checkpoint["optimizer_state_dict"]
+            scheduler_state_dict = checkpoint["scheduler_state_dict"]
+
+        # Prepare the checkpoint state dicts for when calling
+        # configure_optimizers.
         model.checkpoint_state_dicts = {
-            "scheduler": checkpoint["lr_schedulers"][0],
-            "optimizer": checkpoint["optimizer_states"][0],
+            "optimizer_state_dict": optimizer_state_dict,
+            "scheduler_state_dict": scheduler_state_dict
         }
-
-        if "scaler" in checkpoint.keys():
-            model.checkpoint_state_dicts["scaler"] = checkpoint
+        # add the scaler state dict if it exists.
+        if "scaler_state_dict" in checkpoint.keys() and checkpoint["scaler_state_dict"] is not None:
+            model.checkpoint_state_dicts["scaler_state_dict"] = checkpoint["scaler_state_dict"]
 
         return model
     
@@ -293,3 +334,21 @@ class TransformerOracle(LightningLikeModule):
             }
         # self.roc.update(y_hat, y_int.int())
         return loss, info
+
+    def pack_for_checkpoint(self, epoch, metrics, optimizer, scheduler, scaler):
+        return {
+            'epoch': epoch,
+            'metrics': metrics,
+            'hyperparameters': {
+                'input_size': self.input_size,
+                'output_size': self.output_size,
+                'n_head': self.n_head,
+                'n_layers': self.n_layers,
+                'lr': self.lr,
+                'loss': self.loss.__class__
+            },
+            'model_state_dict': self.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'scaler_state_dict': scaler.state_dict(),
+        }

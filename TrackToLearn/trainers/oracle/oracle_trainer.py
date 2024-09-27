@@ -3,28 +3,31 @@ import torch.nn as nn
 from TrackToLearn.oracles.transformer_oracle import LightningLikeModule
 from TrackToLearn.trainers.oracle.oracle_monitor import OracleMonitor
 from TrackToLearn.utils.torch_utils import get_device
-from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses, add_losses
+from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses, add_losses, get_mean_item
 from TrackToLearn.utils.hooks import HooksManager, OracleHookEvent
 from collections import defaultdict
 from tqdm import tqdm
+
 
 def to_device(obj, device):
     if isinstance(obj, (list, tuple)):
         return [to_device(o, device) for o in obj]
     return obj.to(device)
 
+
 class OracleTrainer(object):
     def __init__(self,
-        experiment,
-        experiment_id,
-        saving_path,
-        max_epochs,
-        use_comet=True,
-        enable_checkpointing=True,
-        val_interval=1,
-        grad_accumulation_steps=1,
-        device=get_device()
-    ):
+                 experiment,
+                 experiment_id,
+                 saving_path,
+                 max_epochs,
+                 use_comet=True,
+                 enable_checkpointing=True,
+                 val_interval=1,
+                 log_interval=50,
+                 grad_accumulation_steps=1,
+                 device=get_device()
+                 ):
         self.experiment = experiment
         self.experiment_id = experiment_id
         self.saving_path = saving_path
@@ -41,6 +44,7 @@ class OracleTrainer(object):
             experiment_id=self.experiment_id,
             use_comet=use_comet
         )
+        self.log_interval = log_interval  # Log every n update steps
         self.grad_accumulation_steps = grad_accumulation_steps
         assert self.grad_accumulation_steps > 0, "grad_accumulation_steps must be greater than 0"
 
@@ -57,13 +61,14 @@ class OracleTrainer(object):
         self.oracle_model = oracle_model
         self._reset_optimizers()
         self._global_epoch = 0
+        self._global_plotting_step = 0
 
     def _verify_model_was_setup(self):
         if not hasattr(self, 'oracle_model') or self.oracle_model is None:
             raise ValueError("You must call setup_model_training before calling fit_iter.\n"
                              "This makes sure the model is properly setup for training, by \n"
                              "configuring the optimizer, the scheduler and the scaler.")
-        
+
     def _reset_optimizers(self):
         optim_info = self.oracle_model.configure_optimizers(self)
         self.optimizer = optim_info['optimizer']
@@ -92,7 +97,7 @@ class OracleTrainer(object):
         """
         self._verify_model_was_setup()
 
-        self.oracle_model.train() # Set model to training mode
+        self.oracle_model.train()  # Set model to training mode
         self.oracle_model = self.oracle_model.to(self.device)
 
         if reset_optimizers:
@@ -102,26 +107,37 @@ class OracleTrainer(object):
         with tqdm(range(len(train_dataloader))) as pbar:
             for epoch in range(self.max_epochs):
                 pbar.set_description(f"Training oracle epoch {epoch}")
-                self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_EPOCH_START)
+                pbar.update()
+
+                self.hooks_manager.trigger_hooks(
+                    OracleHookEvent.ON_TRAIN_EPOCH_START)
 
                 train_metrics = defaultdict(list)
                 train_matrix = defaultdict(list)
                 for i, batch in enumerate(train_dataloader):
-                    self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_START)
+                    self.hooks_manager.trigger_hooks(
+                        OracleHookEvent.ON_TRAIN_BATCH_START)
 
                     batch = to_device(batch, self.device)
 
                     # Train step
-                    loss, train_info, matrix = self.oracle_model.training_step(batch, i)
+                    loss, train_info, matrix = self.oracle_model.training_step(
+                        batch, i)
+
+                    # Adjust the loss for gradient accumulation
+                    loss = loss / self.grad_accumulation_steps
+                    train_info['train_loss'] = loss.detach()
                     add_item_to_means(train_metrics, train_info)
-                    train_metrics['lr'].append(torch.tensor(self.optimizer.param_groups[0]['lr']))
+
+                    train_metrics['lr'].append(torch.tensor(
+                        self.optimizer.param_groups[0]['lr']))
                     add_item_to_means(train_matrix, matrix)
 
                     # Clear gradients
                     self.optimizer.zero_grad()
 
                     # Backward pass
-                    self.scaler.scale(loss / self.grad_accumulation_steps).backward()
+                    self.scaler.scale(loss).backward()
 
                     # Accumulate the gradients and update the parameters once
                     # we accumulated self.grad_accumulation_steps gradients.
@@ -131,7 +147,8 @@ class OracleTrainer(object):
                         # Unscaling the gradients is required before clipping them.
                         # Ref: https://pytorch.org/docs/main/notes/amp_examples.html#gradient-clipping
                         self.scaler.unscale_(self.optimizer)
-                        _ = nn.utils.clip_grad_norm_(self.oracle_model.parameters(), 1.0)
+                        _ = nn.utils.clip_grad_norm_(
+                            self.oracle_model.parameters(), 1.0)
 
                         # Update parameters
                         self.scaler.step(self.optimizer)
@@ -139,31 +156,46 @@ class OracleTrainer(object):
                         self.scheduler.step()
 
                     pbar.update()
-                    self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_BATCH_END)
+                    pbar.set_postfix(loss=get_mean_item(train_metrics, 'train_loss'),
+                                     lr=self.optimizer.param_groups[0]['lr'],
+                                     train_acc=get_mean_item(train_metrics, 'train_acc'))
+                    self.hooks_manager.trigger_hooks(
+                        OracleHookEvent.ON_TRAIN_BATCH_END)
 
-                train_metrics = mean_losses(train_metrics)
-                self.oracle_monitor.log_metrics(train_metrics, self._global_epoch)
+                    # Log metrics to monitor after every log_interval steps.
+                    # Each epoch is so long that we would like to see the progression
+                    # of the metrics during each epoch as well.
+                    if (i % self.log_interval == 0) or (i == len(train_dataloader) - 1):
+                        # print("Logging metrics with step {} and epoch {}".format(self._global_plotting_step, self._global_epoch))
+                        train_metrics_avg = mean_losses(train_metrics)
+                        self.oracle_monitor.log_metrics(train_metrics_avg,
+                                                        step=self._global_plotting_step, epoch=self._global_epoch)
 
-                train_matrix = add_losses(train_matrix)
-                self.oracle_monitor.log_metrics(train_matrix, self._global_epoch)
+                        train_matrix_avg = add_losses(train_matrix)
+                        self.oracle_monitor.log_metrics(train_matrix_avg,
+                                                        step=self._global_plotting_step, epoch=self._global_epoch)
+
+                        self._global_plotting_step += 1
 
                 if epoch % self.val_interval == 0:
                     self._validate(val_dataloader, epoch, best_acc)
 
                 pbar.reset()
                 self._global_epoch += 1
-                self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TRAIN_EPOCH_END)
+                self.hooks_manager.trigger_hooks(
+                    OracleHookEvent.ON_TRAIN_EPOCH_END)
 
         self.oracle_model = self.oracle_model.to('cpu')
 
     def _validate(self, val_dataloader, epoch, best_acc):
         self.oracle_model.eval()
-        
+
         val_metrics = defaultdict(list)
         val_matrix = defaultdict(list)
         for i, batch in enumerate(val_dataloader):
             batch = to_device(batch, self.device)
-            self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_START)
+            self.hooks_manager.trigger_hooks(
+                OracleHookEvent.ON_VAL_BATCH_START)
 
             # TODO: Implement validation step
             _, val_info, matrix = self.oracle_model.validation_step(batch, i)
@@ -173,39 +205,38 @@ class OracleTrainer(object):
             self.hooks_manager.trigger_hooks(OracleHookEvent.ON_VAL_BATCH_END)
 
         val_metrics = mean_losses(val_metrics)
-        self.oracle_monitor.log_metrics(val_metrics, self._global_epoch)
-        
+        self.oracle_monitor.log_metrics(val_metrics,
+                                        step=self._global_plotting_step, epoch=self._global_epoch)
+
         val_matrix = add_losses(val_matrix)
-        self.oracle_monitor.log_metrics(val_matrix, self._global_epoch)
+        self.oracle_monitor.log_metrics(val_matrix,
+                                        step=self._global_plotting_step, epoch=self._global_epoch)
 
         # Checkpointing
         if self.checkpointing_enabled:
-            checkpoint_dict = {
-                'epoch': epoch,
-                'metrics': val_metrics,
-                'model_state_dict': self.oracle_model.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'scheduler_state_dict': self.scheduler.state_dict()
-            }
+            checkpoint_dict = self.oracle_model.pack_for_checkpoint(
+                epoch, val_metrics, self.optimizer, self.scheduler, self.scaler)
 
             # Always have a copy of the latest model
-            latest_name = '{}/latest_epoch.ckpt'.format(self.saving_path, epoch)
+            latest_name = '{}/latest_epoch.ckpt'.format(
+                self.saving_path, epoch)
             torch.save(checkpoint_dict, latest_name)
 
             # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
             # Also save the optimizer state and the scheduler state, the epoch and the metrics
             acc = val_metrics['val_acc']
             if acc > best_acc:
-                best_name = '{}/best_vc_epoch.ckpt'.format(self.saving_path, epoch)
+                best_name = '{}/best_vc_epoch.ckpt'.format(
+                    self.saving_path, epoch)
                 torch.save(checkpoint_dict, best_name)
                 best_acc = best_acc
-        
+
         self.oracle_model.train()
 
     def test(self, test_dataloader):
         self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TEST_START)
 
-        self.oracle_model.eval() # Set model to evaluation mode
+        self.oracle_model.eval()  # Set model to evaluation mode
         self.oracle_model.to(self.device)
 
         test_metrics = defaultdict(list)

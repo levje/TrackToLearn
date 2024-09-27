@@ -21,6 +21,9 @@ def add_to_means(means, dic):
 def old_mean_losses(dic):
     return {k: np.mean(dic[k]) for k in dic.keys()}
 
+def get_mean_item(dic, key):
+    return np.mean(torch.stack(dic[key]).cpu().numpy())
+
 def mean_losses(dic):
     new_dict = {k: np.mean(torch.stack(dic[k]).cpu().numpy(), axis=0)
                 for k in dic.keys()}

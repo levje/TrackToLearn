@@ -19,7 +19,7 @@ EXPID="BoboshOracle25_noInitDS_GradAccum_"_$(date +"%F-%H_%M_%S")
 ALG="SACAuto"
 RLHFINTERNPV=30         # Number of seeds per tractogram generated during the RLHF pipeline
 MAXEP=10                # Number of RLHF iterations
-ORACLENBSTEPS=2         # Number of steps for the oracle
+ORACLENBSTEPS=4         # Number of steps for the oracle
 AGENTNBSTEPS=100        # Number of steps for the agent
 PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
@@ -78,7 +78,8 @@ if [ $islocal -eq 1 ]; then
     # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-3-epochs/Bobosh-OracleNet-Transformer-3-epochs.ckpt
 
     # Oracle 25 epochs 
-    ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-25-epochs/Bobosh-OracleNet-Transformer-25-epochs.ckpt
+    # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-25-epochs/Bobosh-OracleNet-Transformer-25-epochs.ckpt
+    ORACLECHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TractOracleNet/OracleTrainTest/OracleTrainTest/Training1/best_vc_epoch.ckpt
 
     # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
     AGENTCHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/custom_models/sac_checkpoint/model/last_model_state.ckpt
