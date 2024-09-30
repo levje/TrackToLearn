@@ -34,7 +34,7 @@ class TrackToLearnTraining(Experiment):
     def __init__(
         self,
         train_dto: dict,
-        comet_experiment = None,
+        comet_experiment=None,
     ):
         """
         Parameters
@@ -52,12 +52,9 @@ class TrackToLearnTraining(Experiment):
         self.name = train_dto['id']
 
         # Directories
-        self.log_dir = os.path.join(self.experiment_path, "logs")
         self.model_dir = os.path.join(self.experiment_path, "model")
         self.model_saving_dirs = [self.model_dir]
 
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir)
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
 
@@ -133,11 +130,11 @@ class TrackToLearnTraining(Experiment):
         # Setup validators, which will handle validation and scoring
         # of the generated streamlines
         self.validators = []
-        if self.tractometer_validator: # TODO: This is problematic if we call rl_train multiple times
+        if self.tractometer_validator:  # TODO: This is problematic if we call rl_train multiple times
             self.validators.append(TractometerValidator(
                 self.scoring_data, self.tractometer_reference,
                 dilate_endpoints=self.tractometer_dilate))
-        if self.oracle_validator: # TODO: This is problematic if we call rl_train multiple times
+        if self.oracle_validator:  # TODO: This is problematic if we call rl_train multiple times
             self.validators.append(OracleValidator(
                 self.oracle_checkpoint, self.device))
 
@@ -198,7 +195,7 @@ class TrackToLearnTraining(Experiment):
                         indent=4,
                         separators=(',', ': ')))
 
-    def save_model(self, alg, save_model_dir = None):
+    def save_model(self, alg, save_model_dir=None):
         """ Save the model state to disk
         """
 
@@ -351,14 +348,14 @@ class TrackToLearnTraining(Experiment):
                 stopping_stats = self.stopping_stats(valid_tractogram)
                 print(f" in {time.time() - start} seconds")
 
-                print(stopping_stats) # DO NOT REMOVE
+                print(stopping_stats)  # DO NOT REMOVE
 
                 if self.use_comet:
                     print("Logging losses", end="")
                     start = time.time()
                     self.comet_monitor.log_losses(stopping_stats, i_episode)
                     print(f" in {time.time() - start} seconds")
-                
+
                 print("Saving tractogram...", end="")
                 start = time.time()
                 filename = self.save_rasmm_tractogram(
@@ -371,7 +368,7 @@ class TrackToLearnTraining(Experiment):
                 scores = self.score_tractogram(
                     filename, valid_env)
                 print(f" in {time.time() - start} seconds")
-                
+
                 print(scores)
 
                 # Display what the network is capable-of "now"
@@ -436,7 +433,7 @@ class TrackToLearnTraining(Experiment):
         self.voxel_size = env.get_voxel_size()
         # SH Order (used for tracking afterwards)
         self.target_sh_order = env.target_sh_order
-        
+
         return env
 
     def run(self):
@@ -449,7 +446,6 @@ class TrackToLearnTraining(Experiment):
 
         env = self.setup_environment_and_info()
         valid_env = self.get_valid_env()
-
 
         max_traj_length = env.max_nb_steps
 

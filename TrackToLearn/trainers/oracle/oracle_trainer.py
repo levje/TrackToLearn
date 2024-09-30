@@ -240,7 +240,7 @@ class OracleTrainer(object):
         self.oracle_model.to(self.device)
 
         test_metrics = defaultdict(list)
-        for i, batch in enumerate(test_dataloader):
+        for i, batch in enumerate(tqdm(test_dataloader, desc="testing oracle")):
             batch = to_device(batch, self.device)
             _, test_info = self.oracle_model.test_step(batch, i)
             add_item_to_means(test_metrics, test_info)

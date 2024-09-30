@@ -8,6 +8,7 @@ from dipy.io.streamline import load_tractogram
 from TrackToLearn.trainers.oracle.streamline_dataset_manager import StreamlineDatasetManager
 import numpy as np
 
+
 def generate_dataset(
     config_file: str,
     dataset_file: str
@@ -30,9 +31,11 @@ def generate_dataset(
     # Get the dataset_file folder
     dataset_folder = os.path.dirname(dataset_file)
     dataset_name = os.path.basename(dataset_file)
-    dataset_dir = os.path.abspath(os.path.join(os.path.dirname(config_file), os.pardir))
+    dataset_dir = os.path.abspath(os.path.join(
+        os.path.dirname(config_file), os.pardir))
 
-    dataset_manager = StreamlineDatasetManager(saving_path=dataset_folder, dataset_name=dataset_name)
+    dataset_manager = StreamlineDatasetManager(
+        saving_path=dataset_folder, dataset_name=dataset_name, add_batch_size=1000)
     with open(config_file, "r") as conf:
         config = json.load(conf)
         # Config:
@@ -45,22 +48,26 @@ def generate_dataset(
         #     }
         # }
 
-        for subject_id in config: # subject_id = ismrm2015_1mm
+        for subject_id in config:  # subject_id = ismrm2015_1mm
             subject = config[subject_id]
             streamlines_files_list = subject["streamlines"]
 
-            streamlines_files_exp = add_path_prefix_if_needed(dataset_dir, streamlines_files_list[0])
+            streamlines_files_exp = add_path_prefix_if_needed(
+                dataset_dir, streamlines_files_list[0])
             expanded = expanduser(streamlines_files_exp)
             streamlines_files = glob(expanded)
-            reference_anat = add_path_prefix_if_needed(dataset_dir, subject["reference"])
+            reference_anat = add_path_prefix_if_needed(
+                dataset_dir, subject["reference"])
 
             tractograms = []
             for streamlines_file in streamlines_files:
                 print("Loading streamlines from file : {}".format(streamlines_file))
-                valid_streamlines, invalid_streamlines = load_streamlines(streamlines_file, reference_anat)
+                valid_streamlines, invalid_streamlines = load_streamlines(
+                    streamlines_file, reference_anat)
                 tractograms.append((valid_streamlines, invalid_streamlines))
-            
-            assert tractograms, "No streamlines were loaded for subject {}".format(subject_id)
+
+            assert tractograms, "No streamlines were loaded for subject {}".format(
+                subject_id)
             dataset_manager.add_tractograms_to_dataset(tractograms)
 
     print("Saved dataset : {}".format(dataset_file))
@@ -95,6 +102,7 @@ def load_streamlines(
 
     return sft[valid_indices], sft[invalid_indices]
 
+
 def add_path_prefix_if_needed(path_prefix: str, file: str) -> str:
     """ Add the path to the configuration file if it is not an absolute path.
 
@@ -112,11 +120,12 @@ def add_path_prefix_if_needed(path_prefix: str, file: str) -> str:
         return os.path.abspath(os.path.join(path_prefix, file))
     return file
 
+
 def parse_args():
 
     parser = argparse.ArgumentParser(
         description=parse_args.__doc__)
-    
+
     parser.add_argument('config_file', type=str,
                         help="Configuration file to load subjects and their"
                         " volumes.")

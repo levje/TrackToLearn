@@ -26,6 +26,8 @@ dataset:
         - streamlines (N, 128, 3): the streamlines
         - scores (N,): the class/scores of the streamlines (0 or 1)
 """
+
+
 class StreamlineDatasetManager(object):
     def __init__(self,
                  saving_path: str,
@@ -43,16 +45,19 @@ class StreamlineDatasetManager(object):
         self.number_of_points = number_of_points
         self.add_batch_size = add_batch_size
 
-        if not os.path.exists(saving_path):
-            raise FileExistsError(f"The saving path {saving_path} does not exist.")
+        if not os.path.exists(saving_path) and not saving_path == "":
+            raise FileExistsError(
+                f"The saving path {saving_path} does not exist.")
 
         if dataset_to_augment_path is not None:
             print("Loading the dataset to augment: ", dataset_to_augment_path)
-            self.current_train_nb_streamlines, self.current_test_nb_streamlines = self._load_and_verify_streamline_dataset(dataset_to_augment_path)
+            self.current_train_nb_streamlines, self.current_test_nb_streamlines = self._load_and_verify_streamline_dataset(
+                dataset_to_augment_path)
 
             if not augment_in_place:
                 # We don't want to modify the original dataset, so we copy it to the saving_path
-                self.dataset_file_path = os.path.join(saving_path, dataset_name)
+                self.dataset_file_path = os.path.join(
+                    saving_path, dataset_name)
 
                 # Copy the dataset to the saving path
                 with h5py.File(dataset_to_augment_path, 'r') as original:
@@ -72,16 +77,16 @@ class StreamlineDatasetManager(object):
             self.current_train_nb_streamlines = 0
             self.current_test_nb_streamlines = 0
             self.file_is_created = False
-            
+
     def add_tractograms_to_dataset(self, filtered_tractograms: list[tuple[StatefulTractogram,
                                                                           StatefulTractogram]]):
         """ Gathers all the filtered tractograms and creates or appends a dataset for the
         reward model training. Outputs into a hdf5 file."""
 
-
         if len(filtered_tractograms) == 0:
             import warnings
-            warnings.warn("Called add_tractograms_to_dataset with an empty list of tractograms.")
+            warnings.warn(
+                "Called add_tractograms_to_dataset with an empty list of tractograms.")
 
         # For each sft, get the indices of streamlines for training or for testing.
         # We do that before adding anything to the dataset, because we want to know
@@ -96,7 +101,7 @@ class StreamlineDatasetManager(object):
             nb_pos = len(sft_valid.streamlines)
             nb_pos_train = int(nb_pos * self.train_ratio)
             nb_pos_test = nb_pos - nb_pos_train
-            
+
             pos_indices = np.random.choice(nb_pos, nb_pos, replace=False)
             pos_train_indices = pos_indices[:nb_pos_train]
             pos_test_indices = pos_indices[nb_pos_train:]
@@ -124,7 +129,10 @@ class StreamlineDatasetManager(object):
             if not self.file_is_created:
                 f.attrs['version'] = 1
                 f.attrs['nb_points'] = self.number_of_points
-                direction_dimension = filtered_tractograms[0][0].streamlines[0].shape[-1]
+                direction_dimension = \
+                    filtered_tractograms[0][0].streamlines[0].shape[-1] \
+                    if len(filtered_tractograms[0][0].streamlines) > 0 \
+                    else filtered_tractograms[0][1].streamlines[0].shape[-1]
 
                 # Create the train/test groups
                 train_group = f.create_group('train')
@@ -133,7 +141,8 @@ class StreamlineDatasetManager(object):
                 # Create the TRAIN dataset (train/data & train/scores)
                 train_group.create_dataset(
                     'data',
-                    shape=(train_nb_streamlines, self.number_of_points, direction_dimension),
+                    shape=(train_nb_streamlines,
+                           self.number_of_points, direction_dimension),
                     maxshape=(None, self.number_of_points, direction_dimension))
 
                 train_group.create_dataset(
@@ -144,17 +153,18 @@ class StreamlineDatasetManager(object):
                 # Create the TEST dataset (test/data & test/scores)
                 test_group.create_dataset(
                     'data',
-                    shape=(test_nb_streamlines, self.number_of_points, direction_dimension),
+                    shape=(test_nb_streamlines, self.number_of_points,
+                           direction_dimension),
                     maxshape=(None, self.number_of_points, direction_dimension))
-                
+
                 test_group.create_dataset(
                     'scores',
                     shape=(test_nb_streamlines,),
                     maxshape=(None,))
-                
+
                 self.file_is_created = True
                 do_resize = False
-            
+
             # The dataset file is already created. Make sure it's
             # consistent with the current dataset.
             else:
@@ -163,23 +173,30 @@ class StreamlineDatasetManager(object):
                 train_group = f['train']
                 test_group = f['test']
                 f.attrs['version'] += 1
-                do_resize = True # We are appending new data, we need to resize the dataset.
+                # We are appending new data, we need to resize the dataset.
+                do_resize = True
 
             # Resize the dataset to append the new streamlines.
             if do_resize:
-                train_group['data'].resize(self.current_train_nb_streamlines + train_nb_streamlines, axis=0)
-                train_group['scores'].resize(self.current_train_nb_streamlines + train_nb_streamlines, axis=0)
+                train_group['data'].resize(
+                    self.current_train_nb_streamlines + train_nb_streamlines, axis=0)
+                train_group['scores'].resize(
+                    self.current_train_nb_streamlines + train_nb_streamlines, axis=0)
 
-                test_group['data'].resize(self.current_test_nb_streamlines + test_nb_streamlines, axis=0)
-                test_group['scores'].resize(self.current_test_nb_streamlines + test_nb_streamlines, axis=0)
+                test_group['data'].resize(
+                    self.current_test_nb_streamlines + test_nb_streamlines, axis=0)
+                test_group['scores'].resize(
+                    self.current_test_nb_streamlines + test_nb_streamlines, axis=0)
 
             # Indices where to add the streamlines in the file (contiguous at the end of array).
-            file_train_indices = np.arange(self.current_train_nb_streamlines, self.current_train_nb_streamlines + train_nb_streamlines)
-            file_test_indices = np.arange(self.current_test_nb_streamlines, self.current_test_nb_streamlines + test_nb_streamlines)
+            file_train_indices = np.arange(
+                self.current_train_nb_streamlines, self.current_train_nb_streamlines + train_nb_streamlines)
+            file_test_indices = np.arange(
+                self.current_test_nb_streamlines, self.current_test_nb_streamlines + test_nb_streamlines)
 
             np.random.shuffle(file_train_indices)
             np.random.shuffle(file_test_indices)
-            
+
             # Actually add the streamlines to the dataset using the precalculated
             # indices.
             for i, (sft_train_indices, sft_test_indices) in enumerate(tqdm(zip(train_indices, test_indices), desc="Adding tractograms to dataset", total=len(filtered_tractograms))):
@@ -201,7 +218,8 @@ class StreamlineDatasetManager(object):
                                               file_idx,
                                               sub_pbar_desc="add train/pos streamlines",
                                               batch_size=self.add_batch_size)
-                file_train_indices = file_train_indices[len(pos_train_indices):]
+                file_train_indices = file_train_indices[len(
+                    pos_train_indices):]
 
                 # Add the training negative streamlines
                 file_idx = file_train_indices[:len(neg_train_indices)]
@@ -211,7 +229,8 @@ class StreamlineDatasetManager(object):
                                               file_idx,
                                               sub_pbar_desc="add train/neg streamlines",
                                               batch_size=self.add_batch_size)
-                file_train_indices = file_train_indices[len(neg_train_indices):]
+                file_train_indices = file_train_indices[len(
+                    neg_train_indices):]
 
                 # Add the testing positive streamlines
                 file_idx = file_test_indices[:len(pos_test_indices)]
@@ -233,12 +252,14 @@ class StreamlineDatasetManager(object):
                                               batch_size=self.add_batch_size)
                 file_test_indices = file_test_indices[len(neg_test_indices):]
 
-            assert len(file_train_indices) == 0, "Not all training streamlines were added."
-            assert len(file_test_indices) == 0, "Not all testing streamlines were added."
+            assert len(
+                file_train_indices) == 0, "Not all training streamlines were added."
+            assert len(
+                file_test_indices) == 0, "Not all testing streamlines were added."
 
             self.current_train_nb_streamlines += train_nb_streamlines
             self.current_test_nb_streamlines += test_nb_streamlines
-    
+
     def _add_streamlines_to_hdf5(self, f, sft, nb_points, idx, sub_pbar_desc="", batch_size=1000):
         """ Add the streamlines to the hdf5 file.
 
@@ -257,7 +278,8 @@ class StreamlineDatasetManager(object):
         """
 
         # Get the scores and the streamlines
-        scores = np.asarray(sft.data_per_streamline['score'], dtype=np.uint8).squeeze(-1)
+        scores = np.asarray(
+            sft.data_per_streamline['score'], dtype=np.uint8).squeeze(-1)
         # Resample the streamlines
         streamlines = set_number_of_points(sft.streamlines, nb_points)
         streamlines = np.asarray(streamlines)
@@ -281,22 +303,25 @@ class StreamlineDatasetManager(object):
         """ Verify the dataset in the hdf5 file."""
         def get_group_size(group):
             if 'data' not in group:
-                raise ValueError(f"The dataset ({group}) does not contain the 'data' group.")
-            
+                raise ValueError(
+                    f"The dataset ({group}) does not contain the 'data' group.")
+
             if 'scores' not in group:
-                raise ValueError(f"The dataset ({group}) does not contain the 'scores' group.")
-            
+                raise ValueError(
+                    f"The dataset ({group}) does not contain the 'scores' group.")
+
             return group['scores'].shape[0]
-            
+
         with h5py.File(dataset_to_augment_path, 'r') as dataset:
 
             has_train = 'train' in dataset
             has_test = 'test' in dataset
 
             if not has_train and not has_test:
-                raise ValueError("The dataset does not contain the 'train' or 'test' groups.")
-            
+                raise ValueError(
+                    "The dataset does not contain the 'train' or 'test' groups.")
+
             train_size = get_group_size(dataset['train']) if has_train else 0
             test_size = get_group_size(dataset['test']) if has_test else 0
-            
+
             return train_size, test_size

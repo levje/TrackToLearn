@@ -11,7 +11,12 @@ import numpy as np
 # {datagroup} = {'streamlines', 'train', 'test'}
 def check_for_nulls(streamlines: np.ndarray, scores: np.ndarray):
     nb_streamlines = len(streamlines)
-    
+
+    # First check how many streamlines have a coordinate of (0, 0, 0) anywhere in their path
+    have_zero = np.any(streamlines == 0, axis=(1, 2))
+    nb_have_zero = np.sum(have_zero)
+    print("Number of streamlines with a zero coordinate ({:.2f}%): {}/{}".format((nb_have_zero/nb_streamlines)*100, nb_have_zero, nb_streamlines))
+
     start_by_zero = np.all(streamlines[:, 0, :] == 0, axis=1)
     nb_start_by_zero = np.sum(start_by_zero)
 
@@ -92,7 +97,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Analyze the content of an HDF5 file containing streamlines and scores.")
     parser.add_argument("file", type=str, help="Path to the HDF5 file.")
-    parser.add_argument("--datagroup", type=str, default="streamlines", choices=['streamlines', 'train', 'test'], help="Name of the group containing the streamlines and scores. Default is 'streamlines'.")
+    parser.add_argument("--datagroup", type=str, default="train", choices=['streamlines', 'train', 'test'], help="Name of the group containing the streamlines and scores. Default is 'streamlines'.")
     parser.add_argument("--operation", type=str, default="balance", help="Operation to perform on the HDF5 file. Default is balance.")
     args = parser.parse_args()
     main(args.file, args.operation, args.datagroup)

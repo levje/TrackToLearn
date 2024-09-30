@@ -1,17 +1,19 @@
 import argparse
 import os
 from comet_ml import Experiment as CometExperiment
+import torch
 
 from TrackToLearn.utils.torch_utils import assert_accelerator, get_device
 from TrackToLearn.oracles.transformer_oracle import TransformerOracle
 from TrackToLearn.trainers.oracle.data_module import StreamlineDataModule
 from TrackToLearn.trainers.oracle.oracle_trainer import OracleTrainer
+from TrackToLearn.utils.utils import prettier_metrics
 
 
 assert_accelerator()
 
 
-class TractOracleNetTraining(object):
+class TractOracleNetPredict(object):
     def __init__(self, train_dto: dict):
         # Experiment parameters
         self.experiment_path = train_dto['path']
@@ -36,7 +38,7 @@ class TractOracleNetTraining(object):
         self.comet_workspace = train_dto['comet_workspace']
         self.device = get_device()
 
-    def train(self):
+    def test(self):
         root_dir = os.path.join(self.experiment_path,
                                 self.experiment_name, self.id)
 
@@ -50,7 +52,8 @@ class TractOracleNetTraining(object):
         self.output_size = 1
 
         if self.checkpoint:
-            model = TransformerOracle.load_from_checkpoint(self.checkpoint)
+            checkpoint = torch.load(self.checkpoint)
+            model = TransformerOracle.load_from_checkpoint(checkpoint)
         else:
             model = TransformerOracle(
                 self.input_size, self.output_size, self.n_head,
@@ -63,7 +66,7 @@ class TractOracleNetTraining(object):
             workspace=self.comet_workspace,
             parse_args=False,
             auto_metric_logging=False,
-            disabled=not self.use_comet)
+            disabled=True)
 
         print("Done.")
 
@@ -75,8 +78,7 @@ class TractOracleNetTraining(object):
             enable_checkpointing=True,
             val_interval=1,
             device=self.device,
-            grad_accumulation_steps=self.grad_accumulation_steps,
-            use_comet=False
+            grad_accumulation_steps=self.grad_accumulation_steps
         )
         oracle_trainer.setup_model_training(model)
 
@@ -85,13 +87,12 @@ class TractOracleNetTraining(object):
                                   batch_size=self.oracle_batch_size,
                                   num_workers=self.num_workers)
 
-        dm.setup('fit')
-        oracle_trainer.fit_iter(train_dataloader=dm.train_dataloader(),
-                                val_dataloader=dm.val_dataloader())
-
         # Test the model
         dm.setup('test')
-        oracle_trainer.test(test_dataloader=dm.test_dataloader())
+        test_metrics = oracle_trainer.test(
+            test_dataloader=dm.test_dataloader())
+        print("Performance on the test set:\n",
+              prettier_metrics(test_metrics))
 
 
 def add_oracle_train_args(parser):
@@ -142,8 +143,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    training = TractOracleNetTraining(vars(args))
-    training.train()
+    predictor = TractOracleNetPredict(vars(args))
+    predictor.test()
 
 
 if __name__ == "__main__":

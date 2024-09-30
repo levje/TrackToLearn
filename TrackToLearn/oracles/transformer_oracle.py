@@ -6,10 +6,11 @@ from torchmetrics.regression import (MeanSquaredError, MeanAbsoluteError)
 from torchmetrics.classification import (BinaryRecall, BinaryPrecision, BinaryAccuracy, BinaryROC,
                                          BinarySpecificity, BinaryF1Score)
 
+
 class LightningLikeModule(nn.Module):
     def __init__(self):
         super(LightningLikeModule, self).__init__()
-    
+
     def configure_optimizers(self):
         raise NotImplementedError()
 
@@ -28,6 +29,7 @@ class LightningLikeModule(nn.Module):
 
     def test_step():
         raise NotImplementedError()
+
 
 class PositionalEncoding(nn.Module):
     """ From
@@ -59,6 +61,7 @@ class PositionalEncoding(nn.Module):
         x = x.permute(1, 0, 2)
         return x
 
+
 class TransformerOracle(LightningLikeModule):
 
     def __init__(
@@ -89,11 +92,11 @@ class TransformerOracle(LightningLikeModule):
         self.embedding = nn.Sequential(
             *(nn.Linear(3, self.embedding_size),
               nn.ReLU()))
-        
+
         # Positional encoding layer
         self.pos_encoding = PositionalEncoding(
             self.embedding_size, max_len=(input_size//3) + 1)
-        
+
         # Transformer encoder layer
         layer = nn.TransformerEncoderLayer(
             self.embedding_size, n_head, batch_first=True)
@@ -107,7 +110,7 @@ class TransformerOracle(LightningLikeModule):
 
         # Loss function
         self.loss = loss()
-        
+
         # Metrics
         self.accuracy = BinaryAccuracy()
         self.recall = BinaryRecall()
@@ -134,16 +137,19 @@ class TransformerOracle(LightningLikeModule):
         if checkpoint is not None:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-            
+
             if "scaler_state_dict" in checkpoint.keys():
                 scaler.load_state_dict(checkpoint["scaler_state_dict"])
 
         elif hasattr(self, 'checkpoint_state_dicts') and self.checkpoint_state_dicts is not None:
-            optimizer.load_state_dict(self.checkpoint_state_dicts["optimizer_state_dict"])
-            scheduler.load_state_dict(self.checkpoint_state_dicts["scheduler_state_dict"])
+            optimizer.load_state_dict(
+                self.checkpoint_state_dicts["optimizer_state_dict"])
+            scheduler.load_state_dict(
+                self.checkpoint_state_dicts["scheduler_state_dict"])
 
             if "scaler_state_dict" in self.checkpoint_state_dicts.keys():
-                scaler.load_state_dict(self.checkpoint_state_dicts["scaler_state_dict"])
+                scaler.load_state_dict(
+                    self.checkpoint_state_dicts["scaler_state_dict"])
 
         return {
             "optimizer": optimizer,
@@ -206,8 +212,8 @@ class TransformerOracle(LightningLikeModule):
             # Create and load the model
             model = TransformerOracle(
                 input_size, output_size, n_head, n_layers, lr, loss)
-            model.load_state_dict(checkpoint["model_state_dict"])
-        
+            model.load_state_dict(checkpoint["state_dict"])
+
             optimizer_state_dict = checkpoint["optimizer_states"][0]
             scheduler_state_dict = checkpoint["lr_schedulers"][0]
 
@@ -241,7 +247,7 @@ class TransformerOracle(LightningLikeModule):
             model.checkpoint_state_dicts["scaler_state_dict"] = checkpoint["scaler_state_dict"]
 
         return model
-    
+
     def training_step(self, train_batch, batch_idx):
         x, y = train_batch
 
@@ -266,7 +272,7 @@ class TransformerOracle(LightningLikeModule):
                 'train_mae':        self.mae(y_hat, y),
                 'train_f1':         self.f1(y_hat, y)
             }
-        
+
         matrix = {
             'train_positives':  y_int.sum(),
             'train_negatives':  (1 - y_int).sum()

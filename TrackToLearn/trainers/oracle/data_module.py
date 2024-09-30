@@ -46,15 +46,17 @@ class StreamlineDataModule(object):
             'persistent_workers': False,
             'pin_memory': get_device_str() == 'cuda',
         }
-        
 
         # Select a random distribution of indices for the training and validation sets.
-        num_streamlines = len(StreamlineBatchDataset(self.dataset_file, stage="train"))
+        num_streamlines = len(StreamlineBatchDataset(
+            self.dataset_file, stage="train"))
         self.indices = np.arange(num_streamlines)
         np.random.shuffle(self.indices)
-        
-        self.train_indices = self.indices[:int(0.8 * num_streamlines)] # 80% of the training data is used for training
-        self.valid_indices = self.indices[int(0.8 * num_streamlines):] # 20% of the training data is used for validation
+
+        # 80% of the training data is used for training
+        self.train_indices = self.indices[:int(0.8 * num_streamlines)]
+        # 20% of the training data is used for validation
+        self.valid_indices = self.indices[int(0.8 * num_streamlines):]
 
         # Accessing elements in an HDF5 file requires indices
         # to be accessed in increasing order.
@@ -62,7 +64,7 @@ class StreamlineDataModule(object):
         self.valid_indices = np.sort(self.valid_indices)
 
         assert len(self.train_indices) > 0 and \
-               len(self.valid_indices) > 0, \
+            len(self.valid_indices) > 0, \
             "The dataset is too small to be split into train, validation and test sets." \
             f"Train: {len(self.train_indices)} Val: {len(self.valid_indices)} Test: {len(self.test_indices)}"
 
@@ -71,15 +73,15 @@ class StreamlineDataModule(object):
         # Assign train/val datasets for use in dataloaders
         if stage == "fit":
             self.streamline_train = Subset(StreamlineBatchDataset(
-                self.dataset_file, stage="train"), self.train_indices)
+                self.dataset_file, stage="train", dense=False), self.train_indices)
 
             self.streamline_val = Subset(StreamlineBatchDataset(
-                self.dataset_file, stage="train"), self.valid_indices)
+                self.dataset_file, stage="train", dense=False), self.valid_indices)
 
         # Assign test dataset for use in dataloader(s)
         if stage == "test":
             self.streamline_test = StreamlineBatchDataset(
-                self.dataset_file, noise=0.0, flip_p=0.0, stage="test")
+                self.dataset_file, noise=0.0, flip_p=0.0, stage="test", dense=False)
 
     def train_dataloader(self):
         """ Create the dataloader for the training set
@@ -118,6 +120,7 @@ class StreamlineDataModule(object):
 
     def predict_dataloader(self):
         pass
+
 
 class WeakShuffleSampler(Sampler):
     """ Weak shuffling inspired by https://towardsdatascience.com/reading-h5-files-faster-with-pytorch-datasets-3ff86938cc  # noqa E501

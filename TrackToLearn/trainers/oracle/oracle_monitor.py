@@ -2,8 +2,9 @@ import comet_ml
 import logging
 import numpy as np
 
+
 class OracleMonitor(object):
-    
+
     def __init__(
         self,
         experiment: comet_ml.Experiment,
@@ -21,9 +22,12 @@ class OracleMonitor(object):
         self.use_comet = use_comet
         if not self.use_comet:
             import warnings
-            warnings.warn("Comet is not being used. No metrics will be logged for the Oracle training.")
+            warnings.warn(
+                "Comet is not being used. No metrics will be logged for the Oracle training.")
 
     def log_parameters(self, hyperparameters: dict):
+        if not self.use_comet:
+            return
         self.e.log_parameters(hyperparameters)
 
     # def log_metrics(self, metrics_dict: dict, episode: int):
@@ -41,8 +45,11 @@ class OracleMonitor(object):
     #     self.experiment.log_metrics(metrics_dict, step=episode, prefix=prefix)
 
     def log_metrics(self, metrics_dict, step: int, epoch: int):
+        if not self.use_comet:
+            return
+
         # print("Logging metrics to comet with step {} and epoch {}".format(step, epoch))
         for k, v in metrics_dict.items():
-            assert isinstance(v, (int, float, np.int64, np.float64, np.float32, np.int32)), "Metrics must be numerical."
+            assert isinstance(v, (int, float, np.int64, np.float64,
+                              np.float32, np.int32)), "Metrics must be numerical."
             self.experiment.log_metric(k, v, step=step)
-        

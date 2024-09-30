@@ -1,3 +1,4 @@
+from typing import Iterable
 import math
 import os
 import sys
@@ -5,7 +6,9 @@ import sys
 from dipy.core.geometry import sphere2cart
 from os.path import join as pjoin
 from time import time
-import cProfile, pstats, io
+import cProfile
+import pstats
+import io
 import numpy as np
 import torch
 
@@ -133,6 +136,43 @@ def from_polar(actions, radius=1.):
     return cart_directions
 
 
+def prettier_metrics(metrics, as_line=False):
+    """ Pretty print metrics """
+    if as_line:
+        return " | ".join(["{}: {:.4f}".format(k, v) for k, v in metrics.items()])
+
+    # Build a string of the metrics to eventually print
+    # The string should be the representation of a table
+    # with each metrics on a row with the following format:
+    # ===================================
+    # Test results
+    # ===================================
+    # | metric_name     |   metric_value |
+    # | metric_name     |   metric_value |
+    # ===================================
+
+    # Get the length of the longest metric value and name
+    max_key_len = max([len(k) for k in metrics.keys()])
+    max_val_len = max([len(str(round(v, 4))) for v in metrics.values()])
+
+    # Create the header
+    header = "=" * (max_key_len + max_val_len + 7)
+    header = header + "\nTest results\n"
+    header = header + "=" * (max_key_len + max_val_len + 7)
+
+    # Create the table
+    table = ""
+    for k, v in sorted(metrics.items()):
+        table = table + \
+            "\n| {:{}} | {:.4f} |".format(
+                k, max_key_len, round(v, 4), max_val_len)
+
+    # Create the footer
+    footer = "=" * (max_key_len + max_val_len + 7)
+
+    return header + table + "\n" + footer
+
+
 class TTLProfiler:
     def __init__(self, enabled: bool = True, throw_at_stop: bool = True) -> None:
         self.pr = None
@@ -142,12 +182,13 @@ class TTLProfiler:
     def start(self):
         if not self.enabled:
             return
-        
+
         if self.pr is not None:
             import warnings
-            warnings.warn("Profiler already started. Stop it before starting a new one.")
+            warnings.warn(
+                "Profiler already started. Stop it before starting a new one.")
             return
-        
+
         self.pr = cProfile.Profile()
         self.pr.enable()
 
@@ -159,7 +200,7 @@ class TTLProfiler:
             import warnings
             warnings.warn("Profiler not started, but stop() was called.")
             return
-        
+
         self.pr.disable()
         s = io.StringIO()
         ps = pstats.Stats(self.pr, stream=s).sort_stats('cumulative')
@@ -170,7 +211,7 @@ class TTLProfiler:
         if self.throw_at_stop:
             raise RuntimeError("Profiling stopped.")
 
-from typing import Iterable
+
 def break_if_grads_have_nans(named_params: Iterable):
     for name, param in named_params:
         if param.grad is not None and torch.isnan(param.grad).any():
@@ -178,7 +219,8 @@ def break_if_grads_have_nans(named_params: Iterable):
             indexes = get_index_where_nans(param.grad)
             print(f"Gradient of parameter {name} has NaNs.")
             raise ValueError('Gradient has NaNs')
-        
+
+
 def break_if_params_have_nans(params: Iterable):
     for p in params:
         if torch.isnan(p).any():
@@ -191,6 +233,7 @@ def break_if_params_have_nans(params: Iterable):
             indexes = torch.isinf(p).nonzero()
             print("Parameter has Infs.")
             raise ValueError('Parameter has Infs')
+
 
 def break_if_found_nans(t: torch.Tensor):
     if isinstance(t, torch.Tensor) and torch.numel(t) != 0:
@@ -206,10 +249,12 @@ def break_if_found_nans(t: torch.Tensor):
             indexes = torch.isinf(t).nonzero()
             print("Tensor has Infs.")
             raise ValueError('Tensor has Infs')
-        
+
+
 def break_if_found_nans_args(*args):
     for arg in args:
         break_if_found_nans(arg)
+
 
 def get_index_where_nans(t: torch.Tensor):
     if torch.numel(t) != 0:
