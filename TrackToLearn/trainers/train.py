@@ -254,8 +254,7 @@ class TrackToLearnTraining(Experiment):
         stopping_stats = self.stopping_stats(valid_tractogram)
         print(stopping_stats)
         if valid_tractogram:
-            if self.use_comet:
-                self.comet_monitor.log_losses(stopping_stats, i_episode)
+            self.comet_monitor.log_losses(stopping_stats, i_episode)
 
             filename = self.save_rasmm_tractogram(valid_tractogram,
                                                   valid_env.subject_id,
@@ -265,8 +264,7 @@ class TrackToLearnTraining(Experiment):
             scores = self.score_tractogram(filename, valid_env)
             print(scores)
 
-            if self.use_comet:
-                self.comet_monitor.log_losses(scores, i_episode)
+            self.comet_monitor.log_losses(scores, i_episode)
         self.save_model(alg, save_model_dir)
 
         # Display the results of the untrained network
@@ -313,7 +311,7 @@ class TrackToLearnTraining(Experiment):
 
             i_episode += 1
             # Update comet logs
-            if self.use_comet and self.comet_experiment is not None:
+            if self.comet_experiment is not None:
                 mean_ep_reward_factors = mean_rewards(reward_factors)
                 self.comet_monitor.log_losses(
                     mean_ep_reward_factors, i_episode)
@@ -350,11 +348,10 @@ class TrackToLearnTraining(Experiment):
 
                 print(stopping_stats)  # DO NOT REMOVE
 
-                if self.use_comet:
-                    print("Logging losses", end="")
-                    start = time.time()
-                    self.comet_monitor.log_losses(stopping_stats, i_episode)
-                    print(f" in {time.time() - start} seconds")
+                print("Logging losses", end="")
+                start = time.time()
+                self.comet_monitor.log_losses(stopping_stats, i_episode)
+                print(f" in {time.time() - start} seconds")
 
                 print("Saving tractogram...", end="")
                 start = time.time()
@@ -374,8 +371,7 @@ class TrackToLearnTraining(Experiment):
                 # Display what the network is capable-of "now"
                 self.log(
                     valid_tractogram, valid_reward, i_episode)
-                if self.use_comet:
-                    self.comet_monitor.log_losses(scores, i_episode)
+                self.comet_monitor.log_losses(scores, i_episode)
                 self.save_model(alg, save_model_dir=save_model_dir)
 
         # End of training, save the model and hyperparameters and track
@@ -385,8 +381,7 @@ class TrackToLearnTraining(Experiment):
         stopping_stats = self.stopping_stats(valid_tractogram)
         print(stopping_stats)
 
-        if self.use_comet:
-            self.comet_monitor.log_losses(stopping_stats, i_episode)
+        self.comet_monitor.log_losses(stopping_stats, i_episode)
 
         filename = self.save_rasmm_tractogram(valid_tractogram,
                                               valid_env.subject_id,
@@ -399,8 +394,7 @@ class TrackToLearnTraining(Experiment):
         self.log(
             valid_tractogram, valid_reward, i_episode)
 
-        if self.use_comet:
-            self.comet_monitor.log_losses(scores, i_episode)
+        self.comet_monitor.log_losses(scores, i_episode)
 
         self.save_model(alg, save_model_dir=save_model_dir)
 
@@ -415,7 +409,7 @@ class TrackToLearnTraining(Experiment):
         self.setup_monitors()
 
         # Setup comet monitors to monitor experiment as it goes along
-        if self.use_comet and not self.comet_monitor_was_setup:
+        if not self.comet_monitor_was_setup:
             self.setup_comet()
             self.comet_monitor_was_setup = True
 

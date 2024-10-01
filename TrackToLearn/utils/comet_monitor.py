@@ -41,20 +41,17 @@ class CometMonitor():
         # This presumes that your API key is in your home folder or at
         # the project root.
         self.e = experiment
-        self.e.add_tag(experiment_id)
+        if self.e is not None:
+            self.e.add_tag(experiment_id)
         self.prefix = prefix
         self.render = render
+        self.use_comet = use_comet
 
     def log_parameters(self, hyperparameters: dict):
-        self.e.log_parameters(hyperparameters)
+        if not self.use_comet:
+            return
 
-    def update_pretrain(
-        self,
-        pretrain_actor_monitor,
-        pretrain_critic_monitor=None,
-        i_episode=0
-    ):
-        pass
+        self.e.log_parameters(hyperparameters)
 
     def update(
         self,
@@ -68,6 +65,8 @@ class CometMonitor():
         ol_monitor=None,
         i_episode=0
     ):
+        if not self.use_comet:
+            return
 
         reward_x, reward_y = zip(*reward_monitor.epochs)
         len_x, len_y = zip(*len_monitor.epochs)
@@ -107,6 +106,9 @@ class CometMonitor():
                 step=i_episode)
 
     def log_losses(self, loss_dict, i):
+        if not self.use_comet:
+            return
+
         for k, v in loss_dict.items():
             if type(v) is np.ndarray:
                 self.e.log_histogram_3d(v, name=k, step=i)
@@ -118,6 +120,9 @@ class CometMonitor():
         monitor,
         i_episode,
     ):
+        if not self.use_comet:
+            return
+
         x, y = zip(*monitor.epochs)
 
         self.e.log_metrics(

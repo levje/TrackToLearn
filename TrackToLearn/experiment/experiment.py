@@ -160,7 +160,7 @@ class Experiment(object):
 
         return env
 
-    def get_valid_env(self, npv = None) -> Tuple[BaseEnv, BaseEnv]:
+    def get_valid_env(self, npv=None) -> Tuple[BaseEnv, BaseEnv]:
         """ Build environments
 
         Returns:
@@ -284,7 +284,7 @@ class Experiment(object):
 
         # Save on the experiment path, or on a specific directory if provided.
         path_prefix = save_dir if save_dir else self.experiment_path
-        
+
         # Save tractogram so it can be looked at, used by the tractometer
         # and more
         filename = pjoin(
@@ -374,7 +374,7 @@ class Experiment(object):
         self.reward_monitor.update(avg_valid_reward)
         self.reward_monitor.end_epoch(i_episode)
 
-        if self.use_comet and self.comet_experiment is not None:
+        if self.comet_experiment is not None:
             # Update comet
             self.comet_monitor.update(
                 self.reward_monitor,
@@ -403,7 +403,7 @@ def add_experiment_args(parser: ArgumentParser):
                         help='Use comet to display training or not')
     parser.add_argument('--comet_offline_dir', type=str,
                         help='Comet offline directory. If enabled, logs will be saved to this directory and the experiment will be ran offline.')
-    
+
 
 def add_data_args(parser: ArgumentParser):
     parser.add_argument('dataset_file',

@@ -282,7 +282,6 @@ class StreamlineDatasetManager(object):
             sft.data_per_streamline['score'], dtype=np.uint8).squeeze(-1)
         # Resample the streamlines
         streamlines = set_number_of_points(sft.streamlines, nb_points)
-        streamlines = np.asarray(streamlines)
         idx = np.sort(idx)
 
         data_group = f['data']
@@ -293,7 +292,8 @@ class StreamlineDatasetManager(object):
         for batch_start in tqdm(range(0, len(idx), batch_size), desc=sub_pbar_desc, total=num_batches, leave=False):
             batch_end = min(batch_start + batch_size, len(idx))
             batch_idx = idx[batch_start:batch_end]
-            batch_streamlines = streamlines[batch_start:batch_end]
+            batch_streamlines = np.asarray(
+                streamlines[batch_start:batch_end], dtype=np.float32)
             batch_scores = scores[batch_start:batch_end]
 
             data_group[batch_idx] = batch_streamlines

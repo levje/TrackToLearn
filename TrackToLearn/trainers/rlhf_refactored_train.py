@@ -25,8 +25,9 @@ from TrackToLearn.utils.torch_utils import assert_accelerator
 
 assert_accelerator()
 
+
 class RlhfRefactored(TrackToLearnTraining):
-    
+
     def __init__(
         self,
         rlhf_train_dto: dict,
@@ -34,7 +35,7 @@ class RlhfRefactored(TrackToLearnTraining):
         agent_experiment: CometExperiment = None,
         oracle_experiment: CometExperiment = None,
         logging_level=logging.INFO
-        ):
+    ):
         super().__init__(
             rlhf_train_dto
         )
@@ -45,10 +46,12 @@ class RlhfRefactored(TrackToLearnTraining):
 
         # General RLHF parameters.
         self.pretrain_max_ep = rlhf_train_dto.get('pretrain_max_ep', None)
-        self.agent_checkpoint_dir = rlhf_train_dto.get('agent_checkpoint_dir', None)
+        self.agent_checkpoint_dir = rlhf_train_dto.get(
+            'agent_checkpoint_dir', None)
         self.agent_checkpoint = rlhf_train_dto.get('agent_checkpoint', None)
         if self.agent_checkpoint:
-            assert os.path.isfile(self.agent_checkpoint), "Agent checkpoint must be an checkpoint file."
+            assert os.path.isfile(
+                self.agent_checkpoint), "Agent checkpoint must be an checkpoint file."
 
         self.ref_model_dir = os.path.join(self.experiment_path, "ref_model")
         self.model_saving_dirs.append(self.ref_model_dir)
@@ -61,40 +64,43 @@ class RlhfRefactored(TrackToLearnTraining):
 
         assert self.pretrain_max_ep is not None or (self.agent_checkpoint_dir is not None or self.agent_checkpoint is not None), \
             "Either pretrain_max_ep or (agent_checkpoint | agent_checkpoint_dir) must be provided for RLHF training."
-        
+
         self.oracle_lr = rlhf_train_dto.get('oracle_lr', None)
         self.oracle_train_steps = rlhf_train_dto['oracle_train_steps']
         self.agent_train_steps = rlhf_train_dto['agent_train_steps']
         self.num_workers = rlhf_train_dto['num_workers']
         self.rlhf_inter_npv = rlhf_train_dto['rlhf_inter_npv']
-        self.disable_oracle_training = rlhf_train_dto.get('disable_oracle_training', False)
+        self.disable_oracle_training = rlhf_train_dto.get(
+            'disable_oracle_training', False)
         self.batch_size = rlhf_train_dto['batch_size']
         self.oracle_batch_size = rlhf_train_dto['oracle_batch_size']
-        grad_accumulation_steps = rlhf_train_dto.get('grad_accumulation_steps', 1)
+        grad_accumulation_steps = rlhf_train_dto.get(
+            'grad_accumulation_steps', 1)
 
         ################################################
         # Start by initializing the agent trainer.     #
         if agent_experiment is None:
             agent_experiment = CometExperiment(project_name=self.experiment,
-                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
-                                        auto_metric_logging=False,
-                                        disabled=not self.use_comet)
+                                               workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                               auto_metric_logging=False,
+                                               disabled=not self.use_comet)
 
             agent_experiment.set_name(self.name)
 
         self.agent_trainer = trainer_cls(rlhf_train_dto, agent_experiment)
         _ = self.agent_trainer.setup_environment_and_info()
         self.get_alg = self.agent_trainer.get_alg
-        
+
         ################################################
         # Continue by initializing the oracle trainer. #
-        comet_ml.config.set_global_experiment(None) # Need this to avoid erasing the RL agent's experiment
-                                                    # when creating a new one.
+        # Need this to avoid erasing the RL agent's experiment
+        comet_ml.config.set_global_experiment(None)
+        # when creating a new one.
         if oracle_experiment is None:
             oracle_experiment = CometExperiment(project_name="TractOracleRLHF",
-                                        workspace=rlhf_train_dto['workspace'], parse_args=False,
-                                        auto_metric_logging=False,
-                                        disabled=not self.use_comet)
+                                                workspace=rlhf_train_dto['workspace'], parse_args=False,
+                                                auto_metric_logging=False,
+                                                disabled=not self.use_comet)
 
             oracle_experiment_id = '-'.join([self.experiment, self.name])
 
@@ -160,8 +166,9 @@ class RlhfRefactored(TrackToLearnTraining):
                 The validation tracking environment (forward).
             """
         assert self.oracle_checkpoint is not None, "Oracle checkpoint must be provided for RLHF training."
-        assert os.path.exists(self.oracle_checkpoint), "Oracle checkpoint does not exist."
-        
+        assert os.path.exists(
+            self.oracle_checkpoint), "Oracle checkpoint does not exist."
+
         current_ep = 0
 
         # Setup agent trainer. (needed since we don't call the run method)
@@ -170,28 +177,31 @@ class RlhfRefactored(TrackToLearnTraining):
         if self.agent_checkpoint_dir is None and self.agent_checkpoint is None:
             # Start by pretraining the RL agent to get reasonable results.
             if isinstance(alg, PPO):
-                alg.kl_penalty_ctrler.pretrain_mode() # TODO: Refactor
+                alg.kl_penalty_ctrler.pretrain_mode()  # TODO: Refactor
 
             self.agent_trainer.rl_train(alg,
-                             env,
-                             valid_env,
-                             max_ep=self.pretrain_max_ep,
-                             starting_ep=0,
-                             save_model_dir=self.ref_model_dir)
+                                        env,
+                                        valid_env,
+                                        max_ep=self.pretrain_max_ep,
+                                        starting_ep=0,
+                                        save_model_dir=self.ref_model_dir)
             current_ep += self.pretrain_max_ep
 
             if isinstance(alg, PPO):
-                alg.old_agent.load_state_dict(alg.agent.actor.state_dict()) # TODO: Refactor
+                alg.old_agent.load_state_dict(
+                    alg.agent.actor.state_dict())  # TODO: Refactor
         else:
             # The agent is already pretrained, just need to fine-tune it.
-            self.logger.info("Skipping pretraining procedure: loading agent from checkpoint...")
+            self.logger.info(
+                "Skipping pretraining procedure: loading agent from checkpoint...")
             self._load_agent_checkpoint(alg)
             self.logger.info("Done.")
 
         if isinstance(alg, PPO):
-            alg.kl_penalty_ctrler.rlhf_mode() # TODO: Refactor
+            alg.kl_penalty_ctrler.rlhf_mode()  # TODO: Refactor
 
-        self.agent_trainer.comet_monitor.e.add_tag("RLHF-start-ep-{}".format(current_ep))
+        self.agent_trainer.comet_monitor.e.add_tag(
+            "RLHF-start-ep-{}".format(current_ep))
 
         # Setup oracle training
         self.oracle = OracleSingleton(self.oracle_checkpoint,
@@ -199,16 +209,17 @@ class RlhfRefactored(TrackToLearnTraining):
                                       batch_size=self.oracle_batch_size,
                                       lr=self.oracle_lr)
         self.oracle_trainer.setup_model_training(self.oracle.model)
-        
+
         # Setup environment
         self.tracker_env = self.get_valid_env(npv=self.rlhf_inter_npv)
         self.tracker = Tracker(
             alg, self.n_actor, prob=1.0, compress=0.0)
-        
+
         # Setup filterers which will be used to filter tractograms
         # for the RLHF pipeline.
         self.filterers = [
-            TractometerFilterer(self.scoring_data, self.tractometer_reference, dilate_endpoints=self.tractometer_dilate)
+            TractometerFilterer(self.scoring_data, self.tractometer_reference,
+                                dilate_endpoints=self.tractometer_dilate)
         ]
 
         # RLHF loop to fine-tune the oracle to the RL agent and vice-versa.
@@ -218,28 +229,35 @@ class RlhfRefactored(TrackToLearnTraining):
 
             if self.disable_oracle_training:
                 self.logger.info("Oracle training is disabled. Only the agent will be trained and the dataset will not be augmented.\n",
-                      "This is equivalent to just training the agent for an additional {} ({} x {}) epochs.".format(self.agent_train_steps*max_ep, max_ep, self.agent_train_steps))
+                                 "This is equivalent to just training the agent for an additional {} ({} x {}) epochs.".format(self.agent_train_steps*max_ep, max_ep, self.agent_train_steps))
             else:
                 with tempfile.TemporaryDirectory() as tmpdir:
                     # Generate a tractogram
                     tractograms_path = os.path.join(tmpdir, "tractograms")
                     if not os.path.exists(tractograms_path):
                         os.makedirs(tractograms_path)
-                    self.logger.debug("Generating tractograms for RLHF training...")
-                    tractograms = self.generate_and_save_tractograms(self.tracker, self.tracker_env, tractograms_path)
+                    self.logger.info(
+                        "Generating tractograms for RLHF training...")
+                    tractograms = self.generate_and_save_tractograms(
+                        self.tracker, self.tracker_env, tractograms_path)
 
                     # Filter the tractogram
                     filtered_path = os.path.join(tmpdir, "filtered")
                     if not os.path.exists(filtered_path):
                         os.makedirs(filtered_path)
-                    self.logger.debug("Filtering tractograms for RLHF training...")
-                    filtered_tractograms = self.filter_tractograms(tractograms, filtered_path) # Need to filter for each filterer and keep the same order.
+                    self.logger.info(
+                        "Filtering tractograms for RLHF training...")
+                    # Need to filter for each filterer and keep the same order.
+                    filtered_tractograms = self.filter_tractograms(
+                        tractograms, filtered_path)
 
-                    self.logger.debug("Adding filtered tractograms to the dataset...")
-                    self.dataset_manager.add_tractograms_to_dataset(filtered_tractograms)
+                    self.logger.info(
+                        "Adding filtered tractograms to the dataset...")
+                    self.dataset_manager.add_tractograms_to_dataset(
+                        filtered_tractograms)
 
                     # Train reward model
-                    self.logger.debug("Training reward model...")
+                    self.logger.info("Training reward model...")
                     self.train_reward()
 
             # Train the RL agent
@@ -277,7 +295,7 @@ class RlhfRefactored(TrackToLearnTraining):
         fine-tuning algorithm is PPO, there's a difference between the architecture of the policy
         and the critic. The SAC policy maximizes entropy and predicts it's own standard deviation
         distribution while the PPO policy only predicts means (with independent std parameter).
-        
+
         Here are the cases that are handled:
 
         1. Pretrain with SAC and fine-tune with SAC.
@@ -320,10 +338,11 @@ class RlhfRefactored(TrackToLearnTraining):
         self.logger.debug("Agent checkpoint: {}".format(self.agent_checkpoint))
         self.logger.debug("checkpoint_dir: {}".format(checkpoint_dir))
 
-        hparams = load_hyperparameters(os.path.join(checkpoint_dir, 'hyperparameters.json'))
+        hparams = load_hyperparameters(os.path.join(
+            checkpoint_dir, 'hyperparameters.json'))
         ckpt_algo = get_algorithm_cls(hparams['algorithm'])
 
-        if isinstance(alg, ckpt_algo): # Same algorithm, same architecture.
+        if isinstance(alg, ckpt_algo):  # Same algorithm, same architecture.
             if self.agent_checkpoint_dir:
                 # Use the legacy method that loads the two files of weights
                 # for the policy and the critic.
@@ -332,7 +351,8 @@ class RlhfRefactored(TrackToLearnTraining):
                 # Load the bundled checkpoint file.
                 alg.load_checkpoint(self.agent_checkpoint)
             else:
-                raise ValueError("Must specify either agent_checkpoint_dir or agent_checkpoint.")
+                raise ValueError(
+                    "Must specify either agent_checkpoint_dir or agent_checkpoint.")
 
         elif ckpt_algo == SACAuto and isinstance(alg, PPO):
             # This is needed, because PPO doesn't have the same critic as SAC.
@@ -342,15 +362,17 @@ class RlhfRefactored(TrackToLearnTraining):
             # The critic will be initialized either:
             # 1. Loaded from the checkpoint. This is done in the constructor of PPOActorCritic.
             # 2. Randomly initialized.
-            alg.agent.load_policy(self.agent_checkpoint_dir, 'last_model_state')
+            alg.agent.load_policy(
+                self.agent_checkpoint_dir, 'last_model_state')
         else:
             raise ValueError("Invalid combination of algorithms for RLHF training. Got {} and {}."
                              .format(ckpt_algo.__name__, alg.__class__.__name__))
-        
+
         self.save_model(alg, save_model_dir=self.ref_model_dir)
 
     def generate_and_save_tractograms(self, tracker: Tracker, env: BaseEnv, save_dir: str):
-        tractogram, _ = tracker.track_and_validate(self.tracker_env) # TODO: Change to only track().
+        # TODO: Change to only track().
+        tractogram, _ = tracker.track_and_validate(self.tracker_env)
         filename = self.save_rasmm_tractogram(
             tractogram,
             env.subject_id,
@@ -366,11 +388,12 @@ class RlhfRefactored(TrackToLearnTraining):
         filtered_tractograms = []
         for tractogram in tractograms:
             # TODO: Implement for more than one filterer
-            valid_tractogram, invalid_tractogram = filterer(tractogram, out_dir, scored_extension="trk")
+            valid_tractogram, invalid_tractogram = filterer(
+                tractogram, out_dir, scored_extension="trk")
             filtered_tractograms.append((valid_tractogram, invalid_tractogram))
-        
+
         return filtered_tractograms
-    
+
     def save_hyperparameters(self):
         # self.hyperparameters.update({})
         super().save_hyperparameters(filename='rlhf_hyperparameters.json')
@@ -387,14 +410,14 @@ class RlhfRefactored(TrackToLearnTraining):
 def add_rlhf_training_args(parser: argparse.ArgumentParser):
     rlhf_group = parser.add_argument_group("RLHF Training Arguments")
     rlhf_group.add_argument('--alg', type=str, required=True,
-                        help='The algorithm to use for training the agent.\n'
-                             'Possible values are: SACAuto, PPO.')
+                            help='The algorithm to use for training the agent.\n'
+                            'Possible values are: SACAuto, PPO.')
     rlhf_group.add_argument('--num_workers', type=int, default=10,
-                        help='Number of workers to use for data loading.')
+                            help='Number of workers to use for data loading.')
     rlhf_group.add_argument("--rlhf_inter_npv", type=int, default=None,
                             help="Number of seeds to use when generating intermediate tractograms\n"
                             "for the RLHF training pipeline. If None, the general npv will be used.")
-    
+
     # The following arguments are usually used for PPO, but we are also testing it for other algorithms.
     parser.add_argument('--adaptive_kl', action='store_true',
                         help='This flag enables the adaptive kl penalty.\n'
@@ -406,22 +429,22 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
     parser.add_argument('--kl_horizon', default=1000, type=int,
                         help='KL penalty horizon.')
 
-    # Agent training RLHF arguments 
+    # Agent training RLHF arguments
     agent_group = rlhf_group.add_argument_group("Agent Training Arguments")
     agent_group.add_argument('--agent_train_steps', type=int, required=True,
-                        help='Number of steps to fine-tune the agent during RLHF training.')
+                             help='Number of steps to fine-tune the agent during RLHF training.')
 
     agent_init_group = rlhf_group.add_mutually_exclusive_group(required=True)
     agent_init_group.add_argument('--pretrain_max_ep', type=int,
-                        help='Number of epochs for pretraining the RL agent.\n'
-                             'This is done before starting the RLHF pretraining procedure.')
+                                  help='Number of epochs for pretraining the RL agent.\n'
+                                  'This is done before starting the RLHF pretraining procedure.')
     agent_checkpoint_group = agent_init_group.add_mutually_exclusive_group()
     agent_checkpoint_group.add_argument('--agent_checkpoint_dir', type=str,
-                        help='Path to the folder containing .pth files.\n'
-                             'This avoids retraining the agent from scratch \n'
-                             'and allows to directly fine-tune it.')
+                                        help='Path to the folder containing .pth files.\n'
+                                        'This avoids retraining the agent from scratch \n'
+                                        'and allows to directly fine-tune it.')
     agent_checkpoint_group.add_argument('--agent_checkpoint', type=str,
-                        help='Path to the agent checkpoint FILE to load.')
+                                        help='Path to the agent checkpoint FILE to load.')
 
     # Oracle training RLHF arguments
     oracle_group = rlhf_group.add_argument_group("Oracle Training Arguments")
@@ -429,15 +452,16 @@ def add_rlhf_training_args(parser: argparse.ArgumentParser):
                               help='Learning rate to use for training the oracle.\n'
                               'If not set, the lr stored in the checkpoint will be used.')
     oracle_group.add_argument('--oracle_train_steps', type=int, required=True,
-                        help='Number of steps to fine-tune the oracle during RLHF training.')
+                              help='Number of steps to fine-tune the oracle during RLHF training.')
     oracle_group.add_argument('--oracle_batch_size', type=int, default=2816,
-                        help='Batch size to use for training the oracle.')
+                              help='Batch size to use for training the oracle.')
     oracle_group.add_argument("--dataset_to_augment", type=str, help="Path to the dataset to augment.\n"
-                            "If this is not set, the dataset will be created from scratch entirely by the\n"
-                            "current learning agent.")
+                              "If this is not set, the dataset will be created from scratch entirely by the\n"
+                              "current learning agent.")
     oracle_group.add_argument("--disable_oracle_training", action="store_true",
-                            help="Disable oracle training during RLHF training.\n")
+                              help="Disable oracle training during RLHF training.\n")
     return parser
+
 
 def get_trainer_cls_and_args(alg_name: str):
     trainer_map = {
@@ -450,6 +474,7 @@ def get_trainer_cls_and_args(alg_name: str):
 
     return trainer_map[alg_name]
 
+
 def get_algorithm_cls(alg_name: str):
     algorithm_map = {
         'SACAuto': SACAuto,
@@ -460,6 +485,7 @@ def get_algorithm_cls(alg_name: str):
         raise ValueError(f'Invalid algorithm name: {alg_name}')
 
     return algorithm_map[alg_name]
+
 
 def parse_args():
     """ Train a RL tracking agent using RLHF with PPO. """
@@ -475,6 +501,7 @@ def parse_args():
 
     arguments = parser.parse_args()
     return arguments
+
 
 def main():
     args = parse_args()
