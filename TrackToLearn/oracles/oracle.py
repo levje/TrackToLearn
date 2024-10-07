@@ -12,13 +12,18 @@ autocast_context = torch.cuda.amp.autocast if torch.cuda.is_available(
 
 
 class OracleSingleton:
-    _self = None
+    _registered_checkpoints = {
+        # '<checkpoint name>': <OracleSingleton instance>
+    }
 
     def __new__(cls, *args, **kwargs):
-        if cls._self is None:
-            print('Instanciating new Oracle, should only happen once.')
-            cls._self = super().__new__(cls)
-        return cls._self
+        checkpoint_str = args[0]
+        # Only create one instance of the oracle per checkpoint.
+        if checkpoint_str not in cls._registered_checkpoints.keys():
+            print('Instanciating new Oracle, should only happen once. '
+                  '(ckpt: {})'.format(checkpoint_str))
+            cls._registered_checkpoints[checkpoint_str] = super().__new__(cls)
+        return cls._registered_checkpoints[checkpoint_str]
 
     def __init__(self, checkpoint: str, device: str, batch_size=4096, lr=None):
         self.checkpoint = torch.load(checkpoint, map_location=get_device())
