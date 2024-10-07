@@ -84,7 +84,7 @@ class Experiment(object):
         # The comet object that will handle monitors
         self.comet_monitor = CometMonitor(
             self.comet_experiment, self.name, self.experiment_path,
-            prefix)
+            prefix, use_comet=self.use_comet)
         print(self.hyperparameters)
         self.comet_monitor.log_parameters(self.hyperparameters)
 
