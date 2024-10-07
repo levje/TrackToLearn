@@ -121,7 +121,8 @@ class Experiment(object):
             'oracle_bonus': self.oracle_bonus,
             'oracle_validator': self.oracle_validator,
             'oracle_stopping_criterion': self.oracle_stopping_criterion,
-            'oracle_checkpoint': self.oracle_checkpoint,
+            'oracle_crit_checkpoint': self.oracle_crit_checkpoint,
+            'oracle_reward_checkpoint': self.oracle_reward_checkpoint,
             'scoring_data': self.scoring_data,
             'tractometer_validator': self.tractometer_validator,
             'binary_stopping_threshold': self.binary_stopping_threshold,
@@ -476,9 +477,13 @@ def add_tractometer_args(parser: ArgumentParser):
 
 def add_oracle_args(parser: ArgumentParser):
     oracle = parser.add_argument_group('Oracle')
-    oracle.add_argument('--oracle_checkpoint', type=str,
+    oracle.add_argument('--oracle_reward_checkpoint', type=str,
                         default=None,
-                        help='Checkpoint file (.ckpt) of the Oracle')
+                        help='Checkpoint file (.ckpt) of the Oracle used for '
+                        'rewarding.')
+    oracle.add_argument('--oracle_crit_checkpoint', type=str, default=None,
+                        help='Checkpoint file (.ckpt) of the Oracle used for '
+                        'stopping criterion.')
     oracle.add_argument('--oracle_validator', action='store_true',
                         help='Run a TractOracle model during validation to '
                         'monitor how the training is doing.')

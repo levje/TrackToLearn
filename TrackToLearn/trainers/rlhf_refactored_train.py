@@ -165,9 +165,16 @@ class RlhfRefactored(TrackToLearnTraining):
             valid_env: BaseEnv
                 The validation tracking environment (forward).
             """
-        assert self.oracle_checkpoint is not None, "Oracle checkpoint must be provided for RLHF training."
+        assert self.oracle_crit_checkpoint is not None, "Oracle criterion" \
+            "checkpoint must be provided for RLHF training."
+        assert self.oracle_reward_checkpoint is not None, "Oracle reward" \
+            "checkpoint must be provided for RLHF training."
         assert os.path.exists(
-            self.oracle_checkpoint), "Oracle checkpoint does not exist."
+            self.oracle_crit_checkpoint), "Oracle criterion checkpoint" \
+            "does not exist."
+        assert os.path.exists(
+            self.oracle_reward_checkpoint), "Oracle reward checkpoint"\
+            "does not exist."
 
         current_ep = 0
 

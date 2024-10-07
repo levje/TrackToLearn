@@ -92,7 +92,8 @@ class TrackToLearnTraining(Experiment):
         self.n_dirs = train_dto['n_dirs']
 
         # Oracle parameters
-        self.oracle_checkpoint = train_dto['oracle_checkpoint']
+        self.oracle_crit_checkpoint = train_dto['oracle_crit_checkpoint']
+        self.oracle_reward_checkpoint = train_dto['oracle_reward_checkpoint']
         self.oracle_bonus = train_dto['oracle_bonus']
         self.oracle_validator = train_dto['oracle_validator']
         self.oracle_stopping_criterion = train_dto['oracle_stopping_criterion']
@@ -136,7 +137,7 @@ class TrackToLearnTraining(Experiment):
                 dilate_endpoints=self.tractometer_dilate))
         if self.oracle_validator:  # TODO: This is problematic if we call rl_train multiple times
             self.validators.append(OracleValidator(
-                self.oracle_checkpoint, self.device))
+                self.oracle_crit_checkpoint, self.device))
 
         self._hooks_manager = HooksManager(RlHookEvent)
 
@@ -170,7 +171,8 @@ class TrackToLearnTraining(Experiment):
             'use_classic_reward': self.use_classic_reward,
             # Oracle parameters
             'oracle_bonus': self.oracle_bonus,
-            'oracle_checkpoint': self.oracle_checkpoint,
+            'oracle_crit_checkpoint': self.oracle_crit_checkpoint,
+            'oracle_reward_checkpoint': self.oracle_reward_checkpoint,
             'oracle_stopping_criterion': self.oracle_stopping_criterion,
         }
 

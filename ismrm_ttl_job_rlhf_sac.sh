@@ -71,15 +71,18 @@ if [ $islocal -eq 1 ]; then
     # ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
     # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
     
-    # Oracle Antoine
-    # ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    # Oracle Antoine with partial streamlines (dense).
+    ORACLE_CRIT_CHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+
+    # Oracle trained on full streamlines (not dense).
+    ORACLE_REWARD_CHECKPOINT=custom_models/ismrm_classif_oracle/ismrm_classif_oracle.ckpt
 
     # Oracle 3 epochs
     # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-3-epochs/Bobosh-OracleNet-Transformer-3-epochs.ckpt
 
     # Oracle 25 epochs 
     # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-25-epochs/Bobosh-OracleNet-Transformer-25-epochs.ckpt
-    ORACLECHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TractOracleNet/OracleTrainTest/OracleTrainTest/Training1/best_vc_epoch.ckpt
+    # ORACLECHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TractOracleNet/OracleTrainTest/OracleTrainTest/Training1/best_vc_epoch.ckpt
 
     # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
     AGENTCHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/custom_models/sac_checkpoint/model/last_model_state.ckpt
@@ -106,14 +109,15 @@ else
     DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
-    # cp ~/projects/def-pmjodoin/levje/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    cp ~/projects/def-pmjodoin/levje/oracles/ismrm_paper_oracle.ckpt $DATADIR
     # cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-3-epochs.ckpt $DATADIR
-    cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-25-epochs.ckpt $DATADIR
+    # cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-25-epochs.ckpt $DATADIR
     
     echo "Copying agent checkpoint..."
     cp ~/projects/def-pmjodoin/levje/agents/sac_checkpoint/* $DATADIR/sac_checkpoint
     AGENTCHECKPOINT=$DATADIR/sac_checkpoint/last_model_state.ckpt
-    ORACLECHECKPOINT=$DATADIR/Bobosh-OracleNet-Transformer-25-epochs.ckpt
+    ORACLE_CRIT_CHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
+    ORACLE_REWARD_CHECKPOINT=$ORACLE_CRIT_CHECKPOINT # For now, the reward and the stopping crit checkpoints are the same.
 fi
 
 for RNGSEED in "${SEEDS[@]}"
@@ -167,7 +171,8 @@ do
         --replay_size 1000000 \
         --alignment_weighting 1.0 \
         --binary_stopping_threshold 0.1 \
-        --oracle_checkpoint ${ORACLECHECKPOINT} \
+        --oracle_crit_checkpoint ${ORACLE_CRIT_CHECKPOINT} \
+        --oracle_reward_checkpoint ${ORACLE_REWARD_CHECKPOINT} \
         --oracle_validator \
         --oracle_stopping_criterion \
         --oracle_bonus 10.0 \

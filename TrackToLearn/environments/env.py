@@ -35,8 +35,10 @@ from TrackToLearn.utils.utils import normalize_vectors
 
 # from dipy.io.utils import get_reference_info
 
+
 def collate_fn(data):
     return data
+
 
 class BaseEnv(object):
     """
@@ -120,7 +122,8 @@ class BaseEnv(object):
         self.max_length_mm = env_dto['max_length']
 
         # Oracle parameters
-        self.oracle_checkpoint = env_dto['oracle_checkpoint']
+        self.oracle_crit_checkpoint = env_dto['oracle_crit_checkpoint']
+        self.oracle_reward_checkpoint = env_dto['oracle_reward_checkpoint']
         self.oracle_stopping_criterion = env_dto['oracle_stopping_criterion']
 
         # Tractometer parameters
@@ -161,7 +164,7 @@ class BaseEnv(object):
                 self.loader_iter = iter(self.loader)
                 (sub_id, input_volume, tracking_mask, seeding_mask,
                  peaks, reference) = next(self.loader_iter)[0]
-            
+
             self.subject_id = sub_id
             # Affines
             self.reference = reference
@@ -246,10 +249,10 @@ class BaseEnv(object):
             functools.partial(is_too_curvy, max_theta=self.theta)
 
         # Stopping criterion according to an oracle
-        if self.oracle_checkpoint and self.oracle_stopping_criterion:
+        if self.oracle_crit_checkpoint and self.oracle_stopping_criterion:
             self.stopping_criteria[
                 StoppingFlags.STOPPING_ORACLE] = OracleStoppingCriterion(
-                self.oracle_checkpoint,
+                self.oracle_crit_checkpoint,
                 self.min_nb_steps * 5,
                 self.reference,
                 self.affine_vox2rasmm,
@@ -285,17 +288,17 @@ class BaseEnv(object):
                 factors.append(tractometer_reward)
                 weights.append(self.oracle_bonus)
             elif not self.reward_with_gt \
-                and self.oracle_checkpoint \
-                and np.abs(self.oracle_bonus) > 0:
+                    and self.oracle_reward_checkpoint \
+                    and np.abs(self.oracle_bonus) > 0:
                 # Reward streamlines according to the oracle
-                oracle_reward = OracleReward(self.oracle_checkpoint,
-                                            self.min_nb_steps,
-                                            self.reference,
-                                            self.affine_vox2rasmm,
-                                            self.device)
+                oracle_reward = OracleReward(self.oracle_reward_checkpoint,
+                                             self.min_nb_steps,
+                                             self.reference,
+                                             self.affine_vox2rasmm,
+                                             self.device)
                 factors.append(oracle_reward)
                 weights.append(self.oracle_bonus)
-            
+
             # Combine all reward factors into the reward function
             self.reward_function = RewardFunction(
                 factors,
@@ -436,7 +439,8 @@ class BaseEnv(object):
         sphere = HemiSphere.from_sphere(get_sphere("repulsion724")
                                         ).subdivide(0)
 
-        b_matrix, _ = sh_to_sf_matrix(sphere, find_order_from_nb_coeff(data), "descoteaux07", legacy=is_sh_basis_legacy)
+        b_matrix, _ = sh_to_sf_matrix(sphere, find_order_from_nb_coeff(
+            data), "descoteaux07", legacy=is_sh_basis_legacy)
 
         for idx in np.argwhere(np.sum(data, axis=-1)):
             idx = tuple(idx)
@@ -491,7 +495,7 @@ class BaseEnv(object):
         """
 
         return 3
-    
+
     def get_target_sh_order(self):
         """ Returns the target SH order. For tracking, this is based on the hyperparameters.json if it's specified.
         Otherwise, it's extracted from the data directly.
