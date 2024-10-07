@@ -7,7 +7,9 @@ from TrackToLearn.utils.torch_utils import get_device_str, get_device
 from nibabel.streamlines.array_sequence import ArraySequence
 import contextlib
 
-autocast_context = torch.cuda.amp.autocast if torch.cuda.is_available() else contextlib.nullcontext
+autocast_context = torch.cuda.amp.autocast if torch.cuda.is_available(
+) else contextlib.nullcontext
+
 
 class OracleSingleton:
     _self = None
@@ -22,7 +24,11 @@ class OracleSingleton:
         self.checkpoint = torch.load(checkpoint, map_location=get_device())
 
         # The model's class is saved in hparams
-        hyper_parameters = self.checkpoint["hyper_parameters"]
+        is_pl_checkpoint = "pytorch-lightning_version" in self.checkpoint.keys()
+        hparams_key = "hyper_parameters" \
+            if is_pl_checkpoint else "hyperparameters"
+
+        hyper_parameters = self.checkpoint[hparams_key]
         models = {
             'TransformerOracle': TransformerOracle
         }

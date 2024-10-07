@@ -415,6 +415,7 @@ class TransformerOracle(LightningLikeModule):
             'epoch': epoch,
             'metrics': metrics,
             'hyperparameters': {
+                'name': self.__class__.__name__,
                 'input_size': self.input_size,
                 'output_size': self.output_size,
                 'n_head': self.n_head,
