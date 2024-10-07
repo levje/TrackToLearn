@@ -52,6 +52,9 @@ def main():
         print(f"resulting train length: {train_length}")
         print(f"resulting test length: {test_length}")
 
+        output_handle['version'] = 1
+        output_handle['nb_points'] = inputs_info[0]['handle'].attrs['nb_points']
+
         train_group = output_handle.create_group('train')
         train_group.create_dataset('data', shape=(
             train_length, datashape[0], datashape[1]), dtype=np.float32)

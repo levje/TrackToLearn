@@ -90,7 +90,7 @@ class TractOracleNetPredict(object):
         # Test the model
         dm.setup('test')
         test_metrics = oracle_trainer.test(
-            test_dataloader=dm.test_dataloader())
+            test_dataloader=dm.test_dataloader(), compute_histogram_metrics=True)
         print("Performance on the test set:\n",
               prettier_metrics(test_metrics))
 

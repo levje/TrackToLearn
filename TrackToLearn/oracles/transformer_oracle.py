@@ -5,6 +5,9 @@ from torch import nn, Tensor
 from torchmetrics.regression import (MeanSquaredError, MeanAbsoluteError)
 from torchmetrics.classification import (BinaryRecall, BinaryPrecision, BinaryAccuracy, BinaryROC,
                                          BinarySpecificity, BinaryF1Score)
+from dipy.tracking.utils import length
+import numpy as np
+from collections import defaultdict
 
 
 class LightningLikeModule(nn.Module):
@@ -315,7 +318,7 @@ class TransformerOracle(LightningLikeModule):
 
         return loss, info, matrix
 
-    def test_step(self, test_batch, batch_idx):
+    def test_step(self, test_batch, batch_idx, histogram_metrics: dict = None):
         x, y = test_batch
 
         if len(x.shape) > 3:
@@ -339,6 +342,72 @@ class TransformerOracle(LightningLikeModule):
                 'test_f1':        self.f1(y_hat, y),
             }
         # self.roc.update(y_hat, y_int.int())
+
+        if histogram_metrics is not None:
+            # Compute histogram bin metrics
+            # We want to compute the histogram of the lengths of the tracks as the X axis
+            # and the accuracy of the model for each length of streamline as the Y axis.
+            # We will use the histogram of the lengths of the tracks to compute the bin
+            # metrics.
+            # [0, 5[, [5, 10[, [5, 10[, [10, 15[, [15, 20[, [20, 25[, [25, 30[, [30, 35[,
+            # [35, 40[, [40, 45[, [45, 50[, [50, 55[, [55, 60[, [60, 65[, [65, 70[,
+            # [70, 75[, [75, 80[, [80, 85[, [85, 90[, [90, 95[, [95, 100[, [100, 105[,
+            # [105, 110[, [110, 115[, [115, 120[, [120, 125[, [125, 130[, [130, 135[,
+            # [135, 140[, [140, 145[, [145, 150[, [150, 155[, [155, 160[, [160, 165[,
+            # [165, 170[, [170, 175[, [175, 180[, [180, 185[, [185, 190[, [190, 195[,
+            # [195, 200[
+
+            # Get the lengths of the tracks
+            from dipy.io.stateful_tractogram import StatefulTractogram, Space
+            reference = "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/datasets/ismrm2015_2mm/fodfs/ismrm2015_fodf.nii.gz"
+            # reference = "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/datasets/ismrm2015_1mm/fodfs/ismrm2015_fodf.nii.gz"
+            # reference = "/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/datasets/ismrm2015_1mm/scoring_data/t1.nii.gz"
+            sft = StatefulTractogram(x.cpu().numpy(), reference, Space.VOX)
+            sft.to_rasmm()
+            lengths = np.asarray(list(length(sft.streamlines)))
+
+            # Compute the histogram of the lengths of the tracks
+            bins = np.arange(0, 200, 5).astype(np.float32)
+
+            # Compute the bin metrics
+            # "bin_0": (nb_tracks, total_accuracy), "bin_1": (nb_tracks, total_accuracy), ...
+            for i in range(len(bins) - 1):
+                # Get the indices of the tracks that have a length in the current bin
+                indices = np.where((lengths >= bins[i]) & (
+                    lengths < bins[i + 1]))[0]
+
+                bin_name = '{:.0f}'.format(bins[i + 1])
+                if not bin_name in histogram_metrics.keys():
+                    histogram_metrics[bin_name] = defaultdict(int)
+                # Get the accuracy of the model for the tracks in the current bin
+                if indices.size == 0:
+                    # Doing this will initialize the values to zero if it wasn't already
+                    histogram_metrics[bin_name]['nb_streamlines'] += 0
+                    histogram_metrics[bin_name]['nb_positive'] += 0
+                    histogram_metrics[bin_name]['nb_negative'] += 0
+                    histogram_metrics[bin_name]['nb_correct'] += 0
+                    histogram_metrics[bin_name]['nb_correct_positives'] += 0
+                    histogram_metrics[bin_name]['nb_correct_negatives'] += 0
+                else:
+                    preds = (y_hat[indices] > 0.5).int()
+                    gt = y_int[indices]
+                    nb_corrects = self.accuracy(
+                        y_hat[indices], y_int[indices]).item() * indices.size
+
+                    # Compute the number of positive streamlines that were correctly classified
+                    nb_positive = gt.sum().item()
+                    nb_negative = (1 - gt).sum().item()
+                    nb_correct_positives = (gt * preds).sum().item()
+                    nb_correct_negatives = (
+                        (1 - gt) * (1 - preds)).sum().item()
+
+                    histogram_metrics[bin_name]['nb_streamlines'] += indices.size
+                    histogram_metrics[bin_name]['nb_positive'] += nb_positive
+                    histogram_metrics[bin_name]['nb_negative'] += nb_negative
+                    histogram_metrics[bin_name]['nb_correct'] += nb_corrects
+                    histogram_metrics[bin_name]['nb_correct_positives'] += nb_correct_positives
+                    histogram_metrics[bin_name]['nb_correct_negatives'] += nb_correct_negatives
+
         return loss, info
 
     def pack_for_checkpoint(self, epoch, metrics, optimizer, scheduler, scaler):

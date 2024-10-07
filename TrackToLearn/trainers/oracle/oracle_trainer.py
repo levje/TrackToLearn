@@ -7,6 +7,7 @@ from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses,
 from TrackToLearn.utils.hooks import HooksManager, OracleHookEvent
 from collections import defaultdict
 from tqdm import tqdm
+import numpy as np
 
 
 def to_device(obj, device):
@@ -233,18 +234,111 @@ class OracleTrainer(object):
 
         self.oracle_model.train()
 
-    def test(self, test_dataloader):
+    def test(self, test_dataloader, compute_histogram_metrics=False):
         self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TEST_START)
 
         self.oracle_model.eval()  # Set model to evaluation mode
         self.oracle_model.to(self.device)
 
         test_metrics = defaultdict(list)
+        histogram_metrics = {} if compute_histogram_metrics else None
         for i, batch in enumerate(tqdm(test_dataloader, desc="testing oracle")):
             batch = to_device(batch, self.device)
-            _, test_info = self.oracle_model.test_step(batch, i)
+            _, test_info = self.oracle_model.test_step(
+                batch, i, histogram_metrics)
             add_item_to_means(test_metrics, test_info)
 
         test_metrics = mean_losses(test_metrics)
         self.hooks_manager.trigger_hooks(OracleHookEvent.ON_TEST_END)
+
+        if compute_histogram_metrics:
+            for bin_name, metrics in histogram_metrics.items():
+                accuracy = metrics['nb_correct'] / \
+                    metrics['nb_streamlines'] if metrics['nb_streamlines'] > 0 else -1
+                pos_accuracy = metrics['nb_correct_positives'] / \
+                    metrics['nb_positive'] if metrics['nb_positive'] > 0 else -1
+                neg_accuracy = metrics['nb_correct_negatives'] / \
+                    metrics['nb_negative'] if metrics['nb_negative'] > 0 else -1
+                histogram_metrics[bin_name]['accuracy'] = accuracy
+                histogram_metrics[bin_name]['pos_accuracy'] = pos_accuracy
+                histogram_metrics[bin_name]['neg_accuracy'] = neg_accuracy
+
+            print("Histogram metrics:")
+            for bin_name, metrics in histogram_metrics.items():
+                print(
+                    f"Bin {bin_name}: acc {metrics['accuracy']} | nb_streamlines {metrics['nb_streamlines']}")
+
+            # Show the histogram with matplotlib
+            import matplotlib.pyplot as plt
+
+            def histogram_all():
+                fig, ax = plt.subplots(figsize=(18, 5))
+
+                accuracies = np.asarray([m['accuracy']
+                                        for m in histogram_metrics.values()])
+                nb_streamlines = np.asarray([m['nb_streamlines']
+                                            for m in histogram_metrics.values()])
+                # Replace -1 values by zero
+                accuracies[accuracies == -1] = 0
+
+                ax.bar(histogram_metrics.keys(),
+                       accuracies, width=0.8, align='center')
+
+                for i, v in enumerate(accuracies):
+                    ax.text(i, v + 0.01,
+                            str(nb_streamlines[i]), color='black', ha='center').set_fontsize(6)
+
+                plt.xlabel('Streamline length <')
+                plt.ylabel('Accuracy')
+                ax.set_title('All streamlines')
+                plt.savefig('histogram.png')
+
+            def histogram_pos():
+                fig, ax = plt.subplots(figsize=(18, 5))
+
+                accuracies = np.asarray([m['pos_accuracy']
+                                        for m in histogram_metrics.values()])
+                nb_streamlines = np.asarray([m['nb_positive']
+                                            for m in histogram_metrics.values()])
+                # Replace -1 values by zero
+                accuracies[accuracies == -1] = 0
+
+                ax.bar(histogram_metrics.keys(),
+                       accuracies, width=0.8, align='center')
+
+                for i, v in enumerate(accuracies):
+                    ax.text(i, v + 0.01,
+                            str(nb_streamlines[i]), color='black', ha='center').set_fontsize(6)
+
+                plt.xlabel('Streamline length <')
+                plt.ylabel('Accuracy')
+                ax.set_title('Positive streamlines')
+                plt.savefig('histogram_pos.png')
+
+            def histogram_neg():
+                fig, ax = plt.subplots(figsize=(18, 5))
+
+                accuracies = np.asarray([m['neg_accuracy']
+                                        for m in histogram_metrics.values()])
+                nb_streamlines = np.asarray([m['nb_negative']
+                                            for m in histogram_metrics.values()])
+                # Replace -1 values by zero
+                accuracies[accuracies == -1] = 0
+
+                ax.bar(histogram_metrics.keys(),
+                       accuracies, width=0.8, align='center')
+
+                for i, v in enumerate(accuracies):
+                    ax.text(i, v + 0.01,
+                            str(nb_streamlines[i]), color='black', ha='center').set_fontsize(6)
+
+                plt.xlabel('Streamline length <')
+                plt.ylabel('Accuracy')
+                ax.set_title('Negative streamlines')
+                plt.savefig('histogram_neg.png')
+
+            histogram_all()
+            histogram_pos()
+            histogram_neg()
+
         return test_metrics

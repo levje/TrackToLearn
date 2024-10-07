@@ -3,15 +3,24 @@ EXPPATH=data/experiments/TractOracleNet/${EXPNAME}
 EXPID=Training1
 MAXEPOCHS=50
 
-# Antoine's classic dataset
-# DATASET_FILE=full-antoine.hdf5
+DATASET_FILE=$1
+if [ -z "$DATASET_FILE" ]; then
+    # Antoine's classic dataset
+    DATASET_FILE=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/datasets/ismrm2015_1mm/streamlines/stable/train_test_classical_tracts_antoine.hdf5
 
-# Jeremi's classic dataset
-# DATASET_FILE=/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/train_test_classical_tracts_dataset.hdf5
+    # Jeremi's classic dataset
+    # DATASET_FILE=/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/train_test_classical_tracts_dataset.hdf5
 
-# Jeremi's SAC dataset
-# DATASET_FILE=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/test_generate_async__2024-09-29-21_46_20/1111/oracle/new_dataset.hdf5
-DATASET_FILE=split_0_sac_eq.hdf5
+    # Jeremi's SAC dataset
+    # DATASET_FILE="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/datasets/ismrm2015_1mm/streamlines/stable/train_test_sac_even_bigger_dataset_eq.hdf5"
+fi
+
+# Make sure the dataset file exists and is not empty
+if [ ! -f "${DATASET_FILE}" ]; then
+    echo "Dataset file not found: ${DATASET_FILE}"
+    exit 1
+fi
+
 mkdir -p ${EXPPATH}
 
 # BATCH SIZE and GRAD ACCUMULATION
