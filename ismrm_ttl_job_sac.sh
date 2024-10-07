@@ -10,12 +10,12 @@
 set -e
 
 # Set this to 0 if running on a cluster node.
-islocal=1
+islocal=0
 
 # Expriment parameters
 EXPNAME="TrackToLearn"
 COMETPROJECT="TrackToLearn"
-EXPID="SAC-Pretrain-ckpt-"_$(date +"%F-%H_%M_%S")
+EXPID="SAC-wSpecialized-Oracles-"_$(date +"%F-%H_%M_%S")
 MAXEP=1000
 BATCHSIZE=4096
 SEEDS=(1111)
@@ -42,8 +42,10 @@ if [ $islocal -eq 1 ]; then
     DATASETDIR=$DATADIR
     # ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
     # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
-    ORACLECHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    AGENTCHECKPOINT=data/experiments/TrackToLearn/SAC-Pretrain-ckpt-_2024-09-06-17_29_33/1111/model/last_model_state.ckpt
+    ORACLE_CRIT_CHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    ORACLE_REWARD_CHECKPOINT=custom_models/ismrm_classif_oracle/ismrm_classif_oracle.ckpt
+    
+    # AGENTCHECKPOINT=data/experiments/TrackToLearn/SAC-Pretrain-ckpt-_2024-09-06-17_29_33/1111/model/last_model_state.ckpt
     # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
 else
     echo "Running training on a cluster node..."
@@ -54,8 +56,6 @@ else
     LOGSDIR=$SLURM_TMPDIR/logs
     PYTHONEXEC=python
     export COMET_API_KEY=$(cat ~/.comet_api_key)
-
-    ORACLECHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
 
     # Prepare virtualenv
     echo "Sourcing ENV-TTL-2 virtual environment..."
@@ -70,11 +70,15 @@ else
     DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
-    cp ~/projects/def-pmjodoin/levj1404/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    cp ~/projects/def-pmjodoin/levje/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    cp ~/projects/def-pmjodoin/levje/oracles/ismrm_classif_oracle.ckpt $DATADIR
     
-    echo "Copying agent checkpoint..."
-    cp ~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/* $DATADIR
-    AGENTCHECKPOINT=~/projects/def-pmjodoin/levj1404/agents/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13
+    ORACLE_CRIT_CHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
+    ORACLE_REWARD_CHECKPOINT=$DATADIR/ismrm_classif_oracle.ckpt
+
+    # echo "Copying agent checkpoint..."
+    # cp ~/projects/def-pmjodoin/levje/agents/sac_checkpoint/* $DATADIR/sac_checkpoint
+    # AGENTCHECKPOINT=$DATADIR/sac_checkpoint/last_model_state.ckpt
 fi
 
 for RNGSEED in "${SEEDS[@]}"
@@ -96,7 +100,8 @@ do
         "${DATASETDIR}/ismrm2015.hdf5" \
         --max_ep ${MAXEP} \
         --hidden_dims "1024-1024-1024" \
-        --oracle_checkpoint ${ORACLECHECKPOINT} \
+        --oracle_reward_checkpoint ${ORACLE_REWARD_CHECKPOINT} \
+        --oracle_crit_checkpoint ${ORACLE_CRIT_CHECKPOINT} \
         --oracle_validator \
         --oracle_stopping_criterion \
         --oracle_bonus 10.0 \
