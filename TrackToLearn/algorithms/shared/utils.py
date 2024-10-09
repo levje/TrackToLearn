@@ -18,21 +18,39 @@ def add_to_means(means, dic):
     return {k: means[k] + dic[k] for k in dic.keys()}
 
 # TODO: Remove that, it's just to test classic ppo implementation
+
+
 def old_mean_losses(dic):
     return {k: np.mean(dic[k]) for k in dic.keys()}
 
+
 def get_mean_item(dic, key):
-    return np.mean(torch.stack(dic[key]).cpu().numpy())
+    if isinstance(dic[key][0], torch.Tensor):
+        return np.mean(torch.stack(dic[key]).cpu().numpy())
+    return np.mean(dic[key])
+
 
 def mean_losses(dic):
-    new_dict = {k: np.mean(torch.stack(dic[k]).cpu().numpy(), axis=0)
-                for k in dic.keys()}
+    new_dict = {}
+    for k in dic.keys():
+        values = dic[k]
+        if isinstance(values, list) and isinstance(values[0], torch.Tensor):
+            values = torch.stack(values).cpu().numpy()
+
+        new_dict[k] = np.mean(values, axis=0)
     return new_dict
 
+
 def add_losses(dic):
-    new_dict = {k: np.sum(torch.stack(dic[k]).cpu().numpy(), axis=0)
-                for k in dic.keys()}
+    new_dict = {}
+    for k in dic.keys():
+        values = dic[k]
+        if isinstance(values, list) and isinstance(values[0], torch.Tensor):
+            values = torch.stack(values).cpu().numpy()
+
+        new_dict[k] = np.sum(values, axis=0)
     return new_dict
+
 
 def mean_rewards(dic):
     return {k: np.mean(np.asarray(dic[k]), axis=0) for k in dic.keys()}

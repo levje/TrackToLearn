@@ -68,20 +68,23 @@ class StreamlineDataModule(object):
             "The dataset is too small to be split into train, validation and test sets." \
             f"Train: {len(self.train_indices)} Val: {len(self.valid_indices)} Test: {len(self.test_indices)}"
 
-    def setup(self, stage: str):
+    def setup(self, stage: str, dense: bool = False, partial: bool = False):
 
         # Assign train/val datasets for use in dataloaders
         if stage == "fit":
             self.streamline_train = Subset(StreamlineBatchDataset(
-                self.dataset_file, stage="train", dense=False), self.train_indices)
+                self.dataset_file, stage="train",
+                dense=dense, partial=partial), self.train_indices)
 
             self.streamline_val = Subset(StreamlineBatchDataset(
-                self.dataset_file, stage="train", dense=False), self.valid_indices)
+                self.dataset_file, stage="train",
+                dense=dense, partial=partial), self.valid_indices)
 
         # Assign test dataset for use in dataloader(s)
         if stage == "test":
             self.streamline_test = StreamlineBatchDataset(
-                self.dataset_file, noise=0.0, flip_p=0.0, stage="test", dense=False)
+                self.dataset_file, noise=0.0, flip_p=0.0, stage="test",
+                dense=dense, partial=partial)
 
     def train_dataloader(self):
         """ Create the dataloader for the training set

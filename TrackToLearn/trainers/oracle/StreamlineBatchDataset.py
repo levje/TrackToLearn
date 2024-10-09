@@ -54,7 +54,7 @@ class StreamlineBatchDataset(Dataset):
 
         assert stage in ["train", "test"], \
             "The stage should be either 'train' or 'test'."
-        
+
         self.stage = stage
         f = self.archives
         self.input_size = self._compute_input_size()

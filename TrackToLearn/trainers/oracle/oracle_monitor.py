@@ -28,7 +28,7 @@ class OracleMonitor(object):
     def log_parameters(self, hyperparameters: dict):
         if not self.use_comet:
             return
-        self.e.log_parameters(hyperparameters)
+        self.experiment.log_parameters(hyperparameters)
 
     # def log_metrics(self, metrics_dict: dict, episode: int):
 

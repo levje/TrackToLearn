@@ -1,6 +1,8 @@
 import argparse
 import os
+import comet_ml
 from comet_ml import Experiment as CometExperiment
+import torch.nn as nn
 
 from TrackToLearn.utils.torch_utils import assert_accelerator, get_device
 from TrackToLearn.oracles.transformer_oracle import TransformerOracle
@@ -25,6 +27,14 @@ class TractOracleNetTraining(object):
         self.n_layers = train_dto['n_layers']
         self.checkpoint = train_dto['oracle_checkpoint']
 
+        out_activation_str = train_dto['out_activation']
+        if out_activation_str == 'tanh':
+            self.out_activation = nn.Tanh
+        elif out_activation_str == 'sigmoid':
+            self.out_activation = nn.Sigmoid
+        else:
+            raise ValueError("Invalid output activation function.")
+
         # Data loading parameters
         self.num_workers = train_dto['num_workers']
         self.oracle_batch_size = train_dto['oracle_batch_size']
@@ -35,6 +45,10 @@ class TractOracleNetTraining(object):
         self.use_comet = train_dto['use_comet']
         self.comet_workspace = train_dto['comet_workspace']
         self.device = get_device()
+
+        # Randomly cut the streamlines during the training
+        self.dense = train_dto['dense']
+        self.partial = train_dto['partial']
 
     def train(self):
         root_dir = os.path.join(self.experiment_path,
@@ -54,7 +68,7 @@ class TractOracleNetTraining(object):
         else:
             model = TransformerOracle(
                 self.input_size, self.output_size, self.n_head,
-                self.n_layers, self.lr)
+                self.n_layers, self.lr, out_activation=self.out_activation)
 
         print("Creating Comet experiment {} at workspace {}...".format(
             self.experiment_name, self.comet_workspace), end=' ')
@@ -73,10 +87,11 @@ class TractOracleNetTraining(object):
             root_dir,
             self.oracle_train_steps,
             enable_checkpointing=True,
+            log_interval=1,
             val_interval=1,
             device=self.device,
             grad_accumulation_steps=self.grad_accumulation_steps,
-            use_comet=False
+            use_comet=True
         )
         oracle_trainer.setup_model_training(model)
 
@@ -85,12 +100,12 @@ class TractOracleNetTraining(object):
                                   batch_size=self.oracle_batch_size,
                                   num_workers=self.num_workers)
 
-        dm.setup('fit')
+        dm.setup('fit', dense=self.dense, partial=self.partial)
         oracle_trainer.fit_iter(train_dataloader=dm.train_dataloader(),
                                 val_dataloader=dm.val_dataloader())
 
         # Test the model
-        dm.setup('test')
+        dm.setup('test', dense=False, partial=False)
         oracle_trainer.test(test_dataloader=dm.test_dataloader())
 
 
@@ -134,6 +149,15 @@ def parse_args():
                         help='Comet workspace.')
     parser.add_argument('--use_comet', action='store_true',
                         help='Use comet for logging.')
+    parser.add_argument('--dense', action='store_true',
+                        help='Randomly cut the streamlines during the training.')
+    parser.add_argument('--partial', action='store_true',
+                        help='Modify the score of the streamline to account '
+                        'for the random cutting of streamlines. '
+                        '(partial score)')
+    parser.add_argument('--out_activation', type=str, default='sigmoid',
+                        choices=['tanh', 'sigmoid'],
+                        help='Output activation function.')
 
     add_oracle_train_args(parser)
 
