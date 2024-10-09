@@ -3,7 +3,8 @@ import torch.nn as nn
 from TrackToLearn.oracles.transformer_oracle import LightningLikeModule
 from TrackToLearn.trainers.oracle.oracle_monitor import OracleMonitor
 from TrackToLearn.utils.torch_utils import get_device
-from TrackToLearn.algorithms.shared.utils import add_item_to_means, mean_losses, add_losses, get_mean_item
+from TrackToLearn.algorithms.shared.utils import \
+    (add_item_to_means, mean_losses, add_losses, get_mean_item)
 from TrackToLearn.utils.hooks import HooksManager, OracleHookEvent
 from collections import defaultdict
 from tqdm import tqdm
@@ -16,6 +17,54 @@ def to_device(obj, device):
     return obj.to(device)
 
 
+class MicroBatchInfo(object):
+    def __init__(self):
+        self.info = defaultdict(list)
+        self.actual_micro_batch = 0
+        self.scaled_loss_accum = 0
+
+    def _add_single(self, key, value):
+        if isinstance(value, torch.Tensor):
+            value = value.item()
+        self.info[key].append(value)
+
+    def add_scaled_loss(self, loss):
+        if isinstance(loss, torch.Tensor):
+            self.scaled_loss_accum += loss.item()
+        else:
+            self.scaled_loss_accum += loss
+
+    def add_info(self, info):
+        self.actual_micro_batch += 1
+        for k, v in info.items():
+            self._add_single(k, v)
+
+    def avg_and_get(self, with_loss=True):
+        # We want to average the values of the micro batches
+        # for each key.
+        for k, v in self.info.items():
+            self.info[k] = sum(v) / self.actual_micro_batch
+
+        if with_loss:
+            return self.scaled_loss_accum, self.info
+        return self.info
+
+    def sum_and_get(self, with_loss=True):
+        # We want to sum the values of the micro batches
+        # for each key.
+        for k, v in self.info.items():
+            self.info[k] = sum(v)
+
+        if with_loss:
+            return self.scaled_loss_accum, self.info
+        return self.info
+
+    def reset(self):
+        self.info = defaultdict(list)
+        self.actual_micro_batch = 0
+        self.scaled_loss_accum = 0
+
+
 class OracleTrainer(object):
     def __init__(self,
                  experiment,
@@ -25,7 +74,7 @@ class OracleTrainer(object):
                  use_comet=True,
                  enable_checkpointing=True,
                  val_interval=1,
-                 log_interval=50,
+                 log_interval=1,
                  grad_accumulation_steps=1,
                  device=get_device()
                  ):
@@ -47,28 +96,47 @@ class OracleTrainer(object):
         )
         self.log_interval = log_interval  # Log every n update steps
         self.grad_accumulation_steps = grad_accumulation_steps
-        assert self.grad_accumulation_steps > 0, "grad_accumulation_steps must be greater than 0"
+        assert self.grad_accumulation_steps > 0, \
+            "grad_accumulation_steps must be greater than 0"
+
+    def save_hyperparameters(self):
+        self._verify_model_was_setup()
+
+        hyperparameters = self.oracle_model.hyperparameters
+        hyperparameters.update({
+            'experiment_id': self.experiment_id,
+            'saving_path': self.saving_path,
+            'max_epochs': self.max_epochs,
+            'val_interval': self.val_interval,
+            'log_interval': self.log_interval,
+            'grad_accumulation_steps': self.grad_accumulation_steps
+        })
+
+        self.oracle_monitor.log_parameters(hyperparameters)
 
     def setup_model_training(self, oracle_model: LightningLikeModule):
         """
         This method must be called before calling fit_iter().
 
         It is used to configure the optimizer, the scheduler and the scaler.
-        Contrary to the standard fit() method from Lightning AI that takes the model
-        as an argument, we want to be able to call fit() multiple times with a coherent
-        configuration of the optimizer, the scheduler and the scaler to train the same
-        model.
+        Contrary to the standard fit() method from Lightning AI that takes
+        the model as an argument, we want to be able to call fit() multiple
+        times with a coherent configuration of the optimizer, the scheduler
+        and the scaler to train the same model.
         """
         self.oracle_model = oracle_model
         self._reset_optimizers()
         self._global_epoch = 0
         self._global_plotting_step = 0
+        self.save_hyperparameters()
 
     def _verify_model_was_setup(self):
         if not hasattr(self, 'oracle_model') or self.oracle_model is None:
-            raise ValueError("You must call setup_model_training before calling fit_iter.\n"
-                             "This makes sure the model is properly setup for training, by \n"
-                             "configuring the optimizer, the scheduler and the scaler.")
+            raise ValueError(
+                "You must call setup_model_training before calling "
+                "fit_iter or save_hyperparameters.\n"
+                "This makes sure the model is properly setup for training,\n"
+                "by configuring the optimizer, the scheduler and the scaler.")
 
     def _reset_optimizers(self):
         optim_info = self.oracle_model.configure_optimizers(self)
@@ -91,10 +159,10 @@ class OracleTrainer(object):
         Args:
             train_dataloader: The training dataloader
             val_dataloader: The validation dataloader
-            reset_optimizers: If True, the optimizer, the scheduler and the scaler
-                are reset before training the model instead of reusing the same
-                optimizer, scheduler and scaler as well as their last respective
-                states.
+            reset_optimizers: If True, the optimizer, the scheduler and the
+                scaler are reset before training the model instead of reusing
+                the same optimizer, scheduler and scaler as well as their last
+                respective states.
         """
         self._verify_model_was_setup()
 
@@ -104,8 +172,13 @@ class OracleTrainer(object):
         if reset_optimizers:
             self._reset_optimizers()
 
-        best_acc = 0
-        with tqdm(range(len(train_dataloader))) as pbar:
+        has_non_complete_batch = int(len(
+            train_dataloader) % self.grad_accumulation_steps != 0)
+        nb_of_full_batches = len(
+            train_dataloader) // self.grad_accumulation_steps
+
+        best_loss = float('inf')
+        with tqdm(range(nb_of_full_batches + has_non_complete_batch)) as pbar:
             for epoch in range(self.max_epochs):
                 pbar.set_description(f"Training oracle epoch {epoch}")
                 pbar.update()
@@ -113,8 +186,11 @@ class OracleTrainer(object):
                 self.hooks_manager.trigger_hooks(
                     OracleHookEvent.ON_TRAIN_EPOCH_START)
 
-                train_metrics = defaultdict(list)
-                train_matrix = defaultdict(list)
+                ep_train_metrics = defaultdict(list)
+                ep_train_matrix = defaultdict(list)
+                mb_accumulator = MicroBatchInfo()
+                mb_accum_matrix = MicroBatchInfo()
+
                 for i, batch in enumerate(train_dataloader):
                     self.hooks_manager.trigger_hooks(
                         OracleHookEvent.ON_TRAIN_BATCH_START)
@@ -127,12 +203,14 @@ class OracleTrainer(object):
 
                     # Adjust the loss for gradient accumulation
                     loss = loss / self.grad_accumulation_steps
-                    train_info['train_loss'] = loss.detach()
-                    add_item_to_means(train_metrics, train_info)
 
-                    train_metrics['lr'].append(torch.tensor(
-                        self.optimizer.param_groups[0]['lr']))
-                    add_item_to_means(train_matrix, matrix)
+                    # Since we're working with gradient accumulation, we need
+                    # to accumulate the stats of the micro batches and then
+                    # average them (except the loss that's already averaged
+                    # or scaled correctly on the previous line.
+                    mb_accumulator.add_info(train_info)
+                    mb_accumulator.add_scaled_loss(loss.detach())
+                    mb_accum_matrix.add_info(matrix)
 
                     # Clear gradients
                     self.optimizer.zero_grad()
@@ -142,10 +220,35 @@ class OracleTrainer(object):
 
                     # Accumulate the gradients and update the parameters once
                     # we accumulated self.grad_accumulation_steps gradients.
-                    # This number of steps should be calculated based on the batch size
-                    # and the GPU memory available.
-                    if (i + 1) % self.grad_accumulation_steps == 0:
-                        # Unscaling the gradients is required before clipping them.
+                    # This number of steps should be calculated based on the
+                    # batch size and the GPU memory available.
+                    is_last_batch = i == len(train_dataloader) - 1
+                    if (i + 1) % self.grad_accumulation_steps == 0\
+                            or is_last_batch:
+                        # End of the batch
+                        batch_loss, batch_info = mb_accumulator.avg_and_get()
+                        mb_accumulator.reset()
+                        add_item_to_means(ep_train_metrics, batch_info)
+
+                        matrix_info = mb_accum_matrix.sum_and_get(
+                            with_loss=False)
+                        mb_accum_matrix.reset()
+                        add_item_to_means(ep_train_matrix, matrix_info)
+
+                        # Log the loss
+                        pbar.set_postfix(
+                            loss=batch_loss,
+                            lr=self.optimizer.param_groups[0]['lr'],
+                            avg_ep_mse=get_mean_item(
+                                ep_train_metrics, 'train_mse'),
+                            train_mse=batch_info['train_mse'])
+                        pbar.update()
+
+                        ep_train_metrics['lr'].append(torch.tensor(
+                            self.optimizer.param_groups[0]['lr']))
+
+                        # Unscaling the gradients is required before
+                        # clipping them.
                         # Ref: https://pytorch.org/docs/main/notes/amp_examples.html#gradient-clipping
                         self.scaler.unscale_(self.optimizer)
                         _ = nn.utils.clip_grad_norm_(
@@ -156,30 +259,35 @@ class OracleTrainer(object):
                         self.scaler.update()
                         self.scheduler.step()
 
-                    pbar.update()
-                    pbar.set_postfix(loss=get_mean_item(train_metrics, 'train_loss'),
-                                     lr=self.optimizer.param_groups[0]['lr'],
-                                     train_acc=get_mean_item(train_metrics, 'train_acc'))
+                        self.hooks_manager.trigger_hooks(
+                            OracleHookEvent.ON_TRAIN_BATCH_END)
+
+                        # Log metrics to monitor after every log_interval
+                        # steps. Each epoch is so long that we would like
+                        # to see the progression of the metrics during each
+                        # epoch as well.
+                        if (i % self.log_interval == 0) \
+                                or (i == len(train_dataloader) - 1):
+
+                            train_metrics_avg = mean_losses(ep_train_metrics)
+                            self.oracle_monitor.log_metrics(
+                                train_metrics_avg,
+                                step=self._global_plotting_step,
+                                epoch=self._global_epoch)
+
+                            train_matrix_avg = add_losses(ep_train_matrix)
+                            self.oracle_monitor.log_metrics(
+                                train_matrix_avg,
+                                step=self._global_plotting_step,
+                                epoch=self._global_epoch)
+
+                            self._global_plotting_step += 1
+
                     self.hooks_manager.trigger_hooks(
-                        OracleHookEvent.ON_TRAIN_BATCH_END)
-
-                    # Log metrics to monitor after every log_interval steps.
-                    # Each epoch is so long that we would like to see the progression
-                    # of the metrics during each epoch as well.
-                    if (i % self.log_interval == 0) or (i == len(train_dataloader) - 1):
-                        # print("Logging metrics with step {} and epoch {}".format(self._global_plotting_step, self._global_epoch))
-                        train_metrics_avg = mean_losses(train_metrics)
-                        self.oracle_monitor.log_metrics(train_metrics_avg,
-                                                        step=self._global_plotting_step, epoch=self._global_epoch)
-
-                        train_matrix_avg = add_losses(train_matrix)
-                        self.oracle_monitor.log_metrics(train_matrix_avg,
-                                                        step=self._global_plotting_step, epoch=self._global_epoch)
-
-                        self._global_plotting_step += 1
+                        OracleHookEvent.ON_TRAIN_MICRO_BATCH_END)
 
                 if epoch % self.val_interval == 0:
-                    self._validate(val_dataloader, epoch, best_acc)
+                    self._validate(val_dataloader, epoch, best_loss)
 
                 pbar.reset()
                 self._global_epoch += 1
@@ -188,7 +296,7 @@ class OracleTrainer(object):
 
         self.oracle_model = self.oracle_model.to('cpu')
 
-    def _validate(self, val_dataloader, epoch, best_acc):
+    def _validate(self, val_dataloader, epoch, best_loss):
         self.oracle_model.eval()
 
         val_metrics = defaultdict(list)
@@ -207,11 +315,13 @@ class OracleTrainer(object):
 
         val_metrics = mean_losses(val_metrics)
         self.oracle_monitor.log_metrics(val_metrics,
-                                        step=self._global_plotting_step, epoch=self._global_epoch)
+                                        step=self._global_plotting_step,
+                                        epoch=self._global_epoch)
 
         val_matrix = add_losses(val_matrix)
         self.oracle_monitor.log_metrics(val_matrix,
-                                        step=self._global_plotting_step, epoch=self._global_epoch)
+                                        step=self._global_plotting_step,
+                                        epoch=self._global_epoch)
 
         # Checkpointing
         if self.checkpointing_enabled:
@@ -225,12 +335,12 @@ class OracleTrainer(object):
 
             # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
             # Also save the optimizer state and the scheduler state, the epoch and the metrics
-            acc = val_metrics['val_acc']
-            if acc > best_acc:
+            val_loss = val_metrics['val_loss']
+            if val_loss < best_loss:
                 best_name = '{}/best_vc_epoch.ckpt'.format(
                     self.saving_path, epoch)
                 torch.save(checkpoint_dict, best_name)
-                best_acc = best_acc
+                best_loss = val_loss
 
         self.oracle_model.train()
 
@@ -275,9 +385,9 @@ class OracleTrainer(object):
                 fig, ax = plt.subplots(figsize=(18, 5))
 
                 accuracies = np.asarray([m['accuracy']
-                                        for m in histogram_metrics.values()])
+                                         for m in histogram_metrics.values()])
                 nb_streamlines = np.asarray([m['nb_streamlines']
-                                            for m in histogram_metrics.values()])
+                                             for m in histogram_metrics.values()])
                 # Replace -1 values by zero
                 accuracies[accuracies == -1] = 0
 
@@ -297,9 +407,9 @@ class OracleTrainer(object):
                 fig, ax = plt.subplots(figsize=(18, 5))
 
                 accuracies = np.asarray([m['pos_accuracy']
-                                        for m in histogram_metrics.values()])
+                                         for m in histogram_metrics.values()])
                 nb_streamlines = np.asarray([m['nb_positive']
-                                            for m in histogram_metrics.values()])
+                                             for m in histogram_metrics.values()])
                 # Replace -1 values by zero
                 accuracies[accuracies == -1] = 0
 
@@ -319,9 +429,9 @@ class OracleTrainer(object):
                 fig, ax = plt.subplots(figsize=(18, 5))
 
                 accuracies = np.asarray([m['neg_accuracy']
-                                        for m in histogram_metrics.values()])
+                                         for m in histogram_metrics.values()])
                 nb_streamlines = np.asarray([m['nb_negative']
-                                            for m in histogram_metrics.values()])
+                                             for m in histogram_metrics.values()])
                 # Replace -1 values by zero
                 accuracies[accuracies == -1] = 0
 
