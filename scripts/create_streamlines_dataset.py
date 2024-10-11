@@ -11,7 +11,8 @@ import numpy as np
 
 def generate_dataset(
     config_file: str,
-    dataset_file: str
+    dataset_file: str,
+    negative_score: int = 0,
 ) -> None:
     """ Generate a dataset from a configuration file and save it to disk.
 
@@ -63,7 +64,7 @@ def generate_dataset(
             for streamlines_file in streamlines_files:
                 print("Loading streamlines from file : {}".format(streamlines_file))
                 valid_streamlines, invalid_streamlines = load_streamlines(
-                    streamlines_file, reference_anat)
+                    streamlines_file, reference_anat, negative_score)
                 tractograms.append((valid_streamlines, invalid_streamlines))
 
             assert tractograms, "No streamlines were loaded for subject {}".format(
@@ -76,6 +77,7 @@ def generate_dataset(
 def load_streamlines(
     streamlines_file: str,
     reference,
+    negative_score: int = 0,
 ):
     """ Load the streamlines from a file and make sure they are in
     voxel space and aligned with the corner of the voxels.
@@ -94,11 +96,19 @@ def load_streamlines(
     sft.to_corner()
     sft.to_vox()
 
+    # Check to make sure the negative score index is correct.
+    min_score = np.min(sft.data_per_streamline["score"])
+    if (negative_score == 0 and min_score < 0):
+        raise RuntimeError(
+            "You have a minimum score of {} in the dataset and you "
+            "specified a negative score of {}. Make sure this is correct."
+            .format(min_score, negative_score))
+
     # TODO: This won't work, we need to get the streamlines data probably iteratively.
     scores = sft.data_per_streamline["score"].squeeze(1)
     indices = np.arange(len(scores))
     valid_indices = indices[scores == 1]
-    invalid_indices = indices[scores == 0]
+    invalid_indices = indices[scores == negative_score]
 
     return sft[valid_indices], sft[invalid_indices]
 
@@ -131,6 +141,8 @@ def parse_args():
                         " volumes.")
     parser.add_argument('output', type=str,
                         help="Output filename including path.")
+    parser.add_argument('--negative_score', type=int, default=0,
+                        help="Score to assign to the invalid streamlines. \{0 or -1/}")
 
     arguments = parser.parse_args()
 
@@ -142,7 +154,8 @@ def main():
     args = parse_args()
 
     generate_dataset(config_file=args.config_file,
-                     dataset_file=args.output)
+                     dataset_file=args.output,
+                     negative_score=args.negative_score)
 
 
 if __name__ == "__main__":
