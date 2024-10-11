@@ -21,11 +21,13 @@ class TractometerFilterer(Filterer):
         base_dir,
         reference,
         dilate_endpoints=1,
+        invalid_score=0
     ):
         self.name = 'Tractometer'
         self.gt_config = os.path.join(base_dir, 'scil_scoring_config.json')
         self.gt_dir = base_dir
         self.dilation_factor = dilate_endpoints
+        self.invalid_score = invalid_score
 
         assert os.path.exists(reference), f"Reference {reference} does not exist."
         self.reference = reference
@@ -91,7 +93,8 @@ class TractometerFilterer(Filterer):
         for bundle in vb_sft_list:
             num_streamlines = len(bundle.streamlines)
 
-            bundle.data_per_streamline['score'] = np.ones(num_streamlines, dtype=np.float32)
+            bundle.data_per_streamline['score'] = np.ones(
+                num_streamlines, dtype=np.float32)
 
             if main_tractogram is None:
                 main_tractogram = bundle
@@ -101,7 +104,8 @@ class TractometerFilterer(Filterer):
         # Add invalid streamlines
         num_streamlines = len(inv_tractogram.streamlines)
         if num_streamlines > 0:
-            inv_tractogram.data_per_streamline['score'] = np.zeros(num_streamlines, dtype=np.float32)
+            inv_tractogram.data_per_streamline['score'] = np.full(
+                num_streamlines, self.invalid_score, dtype=np.float32)
 
         if merge_valid_invalid:
             output = main_tractogram + inv_tractogram if main_tractogram is not None else inv_tractogram
