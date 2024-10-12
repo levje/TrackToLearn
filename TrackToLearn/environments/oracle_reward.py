@@ -20,13 +20,17 @@ class OracleReward(Reward):
         min_nb_steps: int,
         reference: nib.Nifti1Image,
         affine_vox2rasmm: np.ndarray,
-        device: str
+        device: str,
+        proportional_reward: bool = False,
+        reward_valid_threshold: float = 0.5,
     ):
         # Name for stats
         self.name = 'oracle_reward'
         # Minimum number of steps before giving reward
         # Only useful for 'sparse' reward
         self.min_nb_steps = min_nb_steps
+        self.proportional_reward = proportional_reward
+        self.reward_valid_threshold = reward_valid_threshold
         # Checkpoint of the oracle, which contains weights and hyperparams.
         if checkpoint:
             self.checkpoint = checkpoint
@@ -58,14 +62,17 @@ class OracleReward(Reward):
             return None
         N = dones.shape[0]
         reward = np.zeros((N))
-        resampled_streamlines = fix_streamlines_length(streamlines, streamlines.shape[1], 128)
-        predictions = self.model.predict(resampled_streamlines)
+        predictions = self.model.predict(streamlines)
         # Double indexing to get the indexes. Don't forget you
         # can't assign using double indexes as the first indexing
         # will return a copy of the array.
-        idx = np.arange(N)[dones][predictions > 0.5]
+        idx = np.arange(N)[dones]
         # Assign the reward using the precomputed double indexes.
-        reward[idx] = 1.0
+        if self.scale_reward:
+            reward[idx] = predictions
+        else:
+            idx = idx[predictions > self.reward_valid_threshold]
+            reward[idx] = 1.0
         return reward
 
     def __call__(
@@ -80,7 +87,7 @@ class OracleReward(Reward):
             # Change ref of streamlines. This is weird on the ISMRM2015
             # dataset as the diff and anat are not in the same space,
             # but it should be fine on other datasets.
-            done_streamlines = streamlines.copy()[dones] # These streamlines should all have the same number of points.
+            done_streamlines = streamlines.copy()[dones]
             tractogram = Tractogram(
                 streamlines=done_streamlines)
             tractogram.apply_affine(self.affine_vox2rasmm)
@@ -91,11 +98,5 @@ class OracleReward(Reward):
             sft.to_vox()
             sft.to_corner()
 
-            # Convert from ArraySequence to numpy array.
-            np_streamlines_to_reward = np.zeros_like(done_streamlines)
-            _rereferenced_streamlines = sft.streamlines # ArraySequence with streamlines of the same length.
-            for i in range(len(done_streamlines)):
-                np_streamlines_to_reward[i] = _rereferenced_streamlines[i]
-
-            return self.reward(np_streamlines_to_reward, dones)
+            return self.reward(sft.streamlines, dones)
         return np.zeros((N))

@@ -131,15 +131,18 @@ class TransformerOracle(LightningLikeModule):
         # Loss function
         self.loss = loss()
 
+        self.is_binary_classif = self.out_activation == nn.Sigmoid
+
         # Metrics
-        # self.accuracy = BinaryAccuracy()
-        # self.recall = BinaryRecall()
-        # self.spec = BinarySpecificity()
-        # self.precision = BinaryPrecision()
+        if self.is_binary_classif:
+            self.accuracy = BinaryAccuracy()
+            self.recall = BinaryRecall()
+            self.spec = BinarySpecificity()
+            self.precision = BinaryPrecision()
+            self.roc = BinaryROC()
+            self.f1 = BinaryF1Score()
         self.mse = MeanSquaredError()
         self.mae = MeanAbsoluteError()
-        # self.roc = BinaryROC()
-        # self.f1 = BinaryF1Score()
 
         # Save the hyperparameters to the checkpoint
         # self.save_hyperparameters()
@@ -226,7 +229,8 @@ class TransformerOracle(LightningLikeModule):
 
             # Create and load the model
             model = TransformerOracle(
-                input_size, output_size, n_head, n_layers, lr, loss)
+                input_size, output_size, n_head, n_layers, lr, loss,
+                out_activation=nn.Sigmoid)
             model.load_state_dict(checkpoint["state_dict"])
 
             optimizer_state_dict = checkpoint["optimizer_states"][0]
@@ -250,7 +254,8 @@ class TransformerOracle(LightningLikeModule):
 
             # Create and load the model
             model = TransformerOracle(
-                input_size, output_size, n_head, n_layers, lr, loss, True, out_activation)
+                input_size, output_size, n_head, n_layers, lr, loss,
+                out_activation=out_activation)
             model.load_state_dict(checkpoint["model_state_dict"])
 
             optimizer_state_dict = checkpoint["optimizer_state_dict"]
@@ -286,14 +291,17 @@ class TransformerOracle(LightningLikeModule):
             # Compute & log the metrics
             info = {
                 # 'train_loss':       loss.detach(),
-                # 'train_acc':        self.accuracy(y_hat, y_int),
-                # 'train_recall':     self.recall(y_hat, y_int),
-                # 'train_spec':       self.spec(y_hat, y_int),
-                # 'train_precision':  self.precision(y_hat, y_int),
                 'train_mse':        self.mse(y_hat, y),
-                'train_mae':        self.mae(y_hat, y),
-                # 'train_f1':         self.f1(y_hat, y)
+                'train_mae':        self.mae(y_hat, y)
             }
+            if self.is_binary_classif:
+                info.update({
+                    'train_acc': self.accuracy(y_hat, y_int),
+                    'train_recall': self.recall(y_hat, y_int),
+                    'train_spec': self.spec(y_hat, y_int),
+                    'train_precision': self.precision(y_hat, y_int),
+                    'train_f1': self.f1(y_hat, y)
+                })
 
         matrix = {
             'train_positives':  y_int.sum(),
@@ -317,14 +325,18 @@ class TransformerOracle(LightningLikeModule):
             # Compute & log the metrics
             info = {
                 'val_loss':      loss,
-                # 'val_acc':       self.accuracy(y_hat, y_int),
-                # 'val_recall':    self.recall(y_hat, y_int),
-                # 'val_spec':      self.spec(y_hat, y_int),
-                # 'val_precision': self.precision(y_hat, y_int),
                 'val_mse':       self.mse(y_hat, y),
-                'val_mae':       self.mae(y_hat, y),
-                # 'val_f1':        self.f1(y_hat, y),
+                'val_mae':       self.mae(y_hat, y)
             }
+
+            if self.is_binary_classif:
+                info.update({
+                    'val_acc':       self.accuracy(y_hat, y_int),
+                    'val_recall':    self.recall(y_hat, y_int),
+                    'val_spec':      self.spec(y_hat, y_int),
+                    'val_precision': self.precision(y_hat, y_int),
+                    'val_f1':        self.f1(y_hat, y),
+                })
 
         # Since we have a range of [-1, 1] for the
         # labels. Required for the following lines.
@@ -356,14 +368,18 @@ class TransformerOracle(LightningLikeModule):
             # Compute & log the metrics
             info = {
                 'test_loss':      loss,
-                # 'test_acc':       self.accuracy(y_hat, y_int),
-                # 'test_recall':    self.recall(y_hat, y_int),
-                # 'test_spec':      self.spec(y_hat, y_int),
-                # 'test_precision': self.precision(y_hat, y_int),
                 'test_mse':       self.mse(y_hat, y),
                 'test_mae':       self.mae(y_hat, y),
-                # 'test_f1':        self.f1(y_hat, y),
             }
+
+            if self.is_binary_classif:
+                info.update({
+                    'test_acc':       self.accuracy(y_hat, y_int),
+                    'test_recall':    self.recall(y_hat, y_int),
+                    'test_spec':      self.spec(y_hat, y_int),
+                    'test_precision': self.precision(y_hat, y_int),
+                    'test_f1':        self.f1(y_hat, y),
+                })
         # self.roc.update(y_hat, y_int.int())
 
         if histogram_metrics is not None:

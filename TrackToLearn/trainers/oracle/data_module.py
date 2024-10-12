@@ -72,6 +72,9 @@ class StreamlineDataModule(object):
 
         # Assign train/val datasets for use in dataloaders
         if stage == "fit":
+            print("Setting up training and validation datasets with dense={} and partial={}".format(
+                dense, partial))
+
             self.streamline_train = Subset(StreamlineBatchDataset(
                 self.dataset_file, stage="train",
                 dense=dense, partial=partial), self.train_indices)
