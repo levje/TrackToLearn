@@ -6,6 +6,7 @@ import torch.nn as nn
 
 from TrackToLearn.utils.torch_utils import assert_accelerator, get_device
 from TrackToLearn.oracles.transformer_oracle import TransformerOracle
+from TrackToLearn.oracles.oracle_cnn import CnnOracle
 from TrackToLearn.trainers.oracle.data_module import StreamlineDataModule
 from TrackToLearn.trainers.oracle.oracle_trainer import OracleTrainer
 
@@ -49,6 +50,14 @@ class TractOracleNetTraining(object):
         # Randomly cut the streamlines during the training
         self.dense = train_dto['dense']
         self.partial = train_dto['partial']
+        architecture = train_dto['oracle_architecture']
+        if architecture == 'transformer':
+            self.model_cls = TransformerOracle
+        elif architecture == 'cnn':
+            self.model_cls = CnnOracle
+        else:    
+            raise ValueError("Invalid architecture.")
+
 
     def train(self):
         root_dir = os.path.join(self.experiment_path,
@@ -64,11 +73,17 @@ class TractOracleNetTraining(object):
         self.output_size = 1
 
         if self.checkpoint:
-            model = TransformerOracle.load_from_checkpoint(self.checkpoint)
+            model = self.model_cls.load_from_checkpoint(self.checkpoint)
         else:
-            model = TransformerOracle(
-                self.input_size, self.output_size, self.n_head,
-                self.n_layers, self.lr, out_activation=self.out_activation)
+            if self.model_cls == CnnOracle:
+                model = CnnOracle(
+                    self.input_size, self.output_size, self.lr,
+                    out_activation=self.out_activation)
+            elif self.model_cls == TransformerOracle:
+                model = TransformerOracle(
+                    self.input_size, self.output_size, self.n_head,
+                    self.n_layers, self.lr,
+                    out_activation=self.out_activation)
 
         print("Creating Comet experiment {} at workspace {}...".format(
             self.experiment_name, self.comet_workspace), end=' ')
@@ -158,6 +173,9 @@ def parse_args():
     parser.add_argument('--out_activation', type=str, default='sigmoid',
                         choices=['tanh', 'sigmoid'],
                         help='Output activation function.')
+    parser.add_argument('--oracle_architecture', type=str, default='transformer',
+                        choices=['transformer', 'cnn'],
+                        help='Architecture to use for the oracle.')
 
     add_oracle_train_args(parser)
 
