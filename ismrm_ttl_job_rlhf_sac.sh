@@ -9,18 +9,15 @@
 # The above comments are used by SLURM to set the job parameters.
 set -e
 
-# Set this to 0 if running on a cluster node.
-islocal=1
-
 # Expriment parameters
 EXPNAME="TrackToLearnRLHF"
 COMETPROJECT="TrackToLearnRLHF"
-EXPID="BoboshOracle25_noInitDS_GradAccum_"_$(date +"%F-%H_%M_%S")
+EXPID="Huge-SAC-SFT+RLHF-"_$(date +"%F-%H_%M_%S")
 ALG="SACAuto"
 RLHFINTERNPV=30         # Number of seeds per tractogram generated during the RLHF pipeline
-MAXEP=10                # Number of RLHF iterations
-ORACLENBSTEPS=4         # Number of steps for the oracle
-AGENTNBSTEPS=100        # Number of steps for the agent
+MAXEP=100                # Number of RLHF iterations
+ORACLENBSTEPS=3         # Number of steps for the oracle
+AGENTNBSTEPS=50         # Number of steps for the agent
 PRETRAINSTEPS=1000      # Number of steps for pretraining if no agent checkpoint is provided.
 
 NPV=20 # Number of points per tractogram for training
@@ -33,8 +30,9 @@ THETA=30
 # Oracle training params
 ORACLE_LR=0.00005 # This will override the LR within the checkpoint.
 TOTAL_BATCH_SIZE=2048
-ORACLE_MICRO_BATCH_SIZE=512
+ORACLE_MICRO_BATCH_SIZE=1024
 GRAD_ACCUM_STEPS=$((TOTAL_BATCH_SIZE / ORACLE_MICRO_BATCH_SIZE))
+DISABLE_ORACLE_TRAINING=0
 
 # PPO hparams
 ENTROPY_LOSS_COEFF=0.0001 # Entropy bonus for policy loss
@@ -49,6 +47,12 @@ KL_HORIZON=1000
 ADAPTIVE_KL=0 # Set to 1 to use adaptive KL
 INIT_CRITIC_TO_ORACLE=0 # Set to 1 to initialize the critic to the oracle
 
+# Check if the script is ran locally or on a cluster node.
+if [ -z $SLURM_JOB_ID ]; then
+    islocal=1
+else
+    islocal=0
+fi
 
 if [ $islocal -eq 1 ]; then
     # This script should be ran from the root of the project is ran locally.
@@ -56,7 +60,6 @@ if [ $islocal -eq 1 ]; then
     SOURCEDIR=.
     DATADIR=data/datasets/ismrm2015_2mm
     EXPDIR=data/experiments
-    LOGSDIR=data/logs
 
     # If CONDAENV is not set, PYTHON EXEC should be python, else it should be the python executable of the conda environment.
     if [ -z $1 ]; then
@@ -67,57 +70,56 @@ if [ $islocal -eq 1 ]; then
     fi
     DATASETDIR=$DATADIR
     
-    # PPO Checkpoints
-    # ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
-    # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
-    
     # Oracle Antoine with partial streamlines (dense).
     ORACLE_CRIT_CHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
 
     # Oracle trained on full streamlines (not dense).
     ORACLE_REWARD_CHECKPOINT=custom_models/ismrm_classif_oracle/ismrm_classif_oracle.ckpt
 
-    # Oracle 3 epochs
-    # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-3-epochs/Bobosh-OracleNet-Transformer-3-epochs.ckpt
+    # THIS IS THE CHECKPOINT WE ARE CURRENTLY USING.
+    # AGENTCHECKPOINT=custom_models/sac_checkpoint/model/last_model_state.ckpt
 
-    # Oracle 25 epochs 
-    # ORACLECHECKPOINT=custom_models/Bobosh-OracleNet-Transformer-25-epochs/Bobosh-OracleNet-Transformer-25-epochs.ckpt
-    # ORACLECHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TractOracleNet/OracleTrainTest/OracleTrainTest/Training1/best_vc_epoch.ckpt
-
-    # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
-    AGENTCHECKPOINT=/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/custom_models/sac_checkpoint/model/last_model_state.ckpt
+    # Setup dataset to augment
+    DATASET_TO_AUGMENT= # data/datasets/ismrm2015_1mm/streamlines/stable/train_test_classical_tracts_antoine.hdf5
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
     SOURCEDIR=~/TrackToLearn
     DATADIR=$SLURM_TMPDIR/data
     EXPDIR=$SLURM_TMPDIR/experiments
-    LOGSDIR=$SLURM_TMPDIR/logs
     PYTHONEXEC=python
+    PROJECTS_DIR=~/projects/def-pmjodoin/levje
     export COMET_API_KEY=$(cat ~/.comet_api_key)
 
     # Prepare virtualenv
     echo "Sourcing ENV-TTL-2 virtual environment..."
-    source ~/ENV-TTL-2/bin/activate # Ideally, we would build the environnement within the node itself, but too much dependencies for now.
+    source ~/ENV-TTL-2/bin/activate
 
     # Prepare datasets
     mkdir -p $DATADIR
     mkdir -p $EXPDIR
 
     echo "Unpacking datasets..."
-    tar xf ~/projects/def-pmjodoin/levje/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
+    tar xf ${PROJECTS_DIR}/datasets/ismrm2015_2mm_ttl.tar.gz -C $DATADIR
     DATASETDIR=$DATADIR/ismrm2015_2mm
 
     echo "Copying oracle checkpoint..."
-    cp ~/projects/def-pmjodoin/levje/oracles/ismrm_paper_oracle.ckpt $DATADIR
-    # cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-3-epochs.ckpt $DATADIR
-    # cp ~/projects/def-pmjodoin/levje/oracles/Bobosh-OracleNet-Transformer-25-epochs.ckpt $DATADIR
-    
+    cp ${PROJECTS_DIR}/oracles/ismrm_paper_oracle.ckpt $DATADIR
+    cp ${PROJECTS_DIR}/oracles/ismrm_classif_oracle.ckpt $DATADIR
+
     echo "Copying agent checkpoint..."
-    cp ~/projects/def-pmjodoin/levje/agents/sac_checkpoint/* $DATADIR/sac_checkpoint
+    cp ${PROJECTS_DIR}/agents/sac_checkpoint/* $DATADIR/sac_checkpoint
     AGENTCHECKPOINT=$DATADIR/sac_checkpoint/last_model_state.ckpt
+
+    # Oracle Antoine with partial streamlines (dense).
     ORACLE_CRIT_CHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
-    ORACLE_REWARD_CHECKPOINT=$ORACLE_CRIT_CHECKPOINT # For now, the reward and the stopping crit checkpoints are the same.
+    
+    # Oracle trained on full streamlines (not dense).
+    ORACLE_REWARD_CHECKPOINT=$DATADIR/ismrm_classif_oracle.ckpt
+
+    # Setup dataset to augment
+    # cp ${PROJECTS_DIR}/datasets/train_test_classical_tracts_dataset.hdf5 $DATADIR
+    $DATASET_TO_AUGMENT= #$DATADIR/train_test_classical_tracts_dataset.hdf5
 fi
 
 for RNGSEED in "${SEEDS[@]}"
@@ -134,6 +136,15 @@ do
     # If ORACLE_LR is set AND is higher than zero, add it to the arguments.
     if [[ -n "${ORACLE_LR}" && $(echo "${ORACLE_LR} > 0" | bc -l) -eq 1 ]]; then
         additionnal_args+=('--oracle_lr' "${ORACLE_LR}")
+    fi
+
+    if [[ -n "${DATASET_TO_AUGMENT}" ]]; then
+        additionnal_args+=('--dataset_to_augment' "${DATASET_TO_AUGMENT}")
+    fi
+
+    if [ $DISABLE_ORACLE_TRAINING -eq 1 ]; then
+        echo "DISABLE_ORACLE_TRAINING is set to 1. Disabling oracle training."
+        additionnal_args+=('--disable_oracle_training')
     fi
 
     if [ $ALG == "PPO" ]; then
@@ -195,26 +206,23 @@ do
         --oracle_batch_size ${ORACLE_MICRO_BATCH_SIZE} \
         --grad_accumulation_steps ${GRAD_ACCUM_STEPS} \
         "${additionnal_args[@]}"
-        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/train_test_classical_tracts_dataset.hdf5" \
-        # --disable_oracle_training \
-        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/new_dataset.hdf5" \
-        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_test_subset.hdf5" \
-        # --dataset_to_augment "/home/local/USHERBROOKE/levj1404/Documents/TractOracleNet/TractOracleNet/datasets/ismrm2015_1mm/ismrm_1mm_tracts_trainset_expandable.hdf5" \
 
     # POST-PROCESSING
     bash scripts/tractogram_post_processing.sh ${DEST_FOLDER} ${DATASETDIR}
 done
 
 if [ $islocal -eq 1 ]; then
-    echo "Experiment results are saved in ${EXPDIR}."
-    echo "To see the results on Comet.ml, please run \"comet upload ${LOGSDIR}/<comet-exp-hash>.zip\"."
     echo "Done."
+    echo "Experiment results are saved in ${EXPDIR}."
 else
     # Archive and save everything
     OUTNAME=${EXPID}$(date -d "today" +"%Y%m%d%H%M").tar
 
     echo "Archiving experiment..."
-    tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR $LOGSDIR
+    tar -cvf ${DATADIR}/${OUTNAME} $EXPDIR
     echo "Copying archive to scratch..."
     cp ${DATADIR}/${OUTNAME} ~/scratch/${OUTNAME}
+
+    echo "Done."
+    echo "Experiment results are saved in ~/scratch/${OUTNAME}."
 fi

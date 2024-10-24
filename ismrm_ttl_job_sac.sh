@@ -10,12 +10,12 @@
 set -e
 
 # Set this to 0 if running on a cluster node.
-islocal=0
+islocal=1
 
 # Expriment parameters
 EXPNAME="TrackToLearn"
 COMETPROJECT="TrackToLearn"
-EXPID="SAC-wSpecialized-Oracles-"_$(date +"%F-%H_%M_%S")
+EXPID="SAC-negRegressor-scaledReward-"_$(date +"%F-%H_%M_%S")
 MAXEP=1000
 BATCHSIZE=4096
 SEEDS=(1111)
@@ -42,11 +42,11 @@ if [ $islocal -eq 1 ]; then
     DATASETDIR=$DATADIR
     # ORACLECHECKPOINT=custom_models/ismrm_ppo_pretrain/model/ismrm_paper_oracle.ckpt
     # AGENTCHECKPOINT=custom_models/ismrm_ppo_pretrain/model
-    ORACLE_CRIT_CHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
-    ORACLE_REWARD_CHECKPOINT=custom_models/ismrm_classif_oracle/ismrm_classif_oracle.ckpt
-    
-    # AGENTCHECKPOINT=data/experiments/TrackToLearn/SAC-Pretrain-ckpt-_2024-09-06-17_29_33/1111/model/last_model_state.ckpt
-    # AGENTCHECKPOINT="/home/local/USHERBROOKE/levj1404/Documents/TrackToLearn/data/experiments/TrackToLearnRLHF/1-Pretrain-AntoineOracle-Finetune_2024-06-09-20_55_13/1111/model"
+    # ORACLE_CRIT_CHECKPOINT=custom_models/ismrm_paper_oracle/ismrm_paper_oracle.ckpt
+    # ORACLE_REWARD_CHECKPOINT=custom_models/ismrm_classif_oracle/ismrm_classif_oracle.ckpt
+
+    ORACLE_CRIT_CHECKPOINT=custom_models/ismrm_neg_regressor_oracle/ismrm_neg_regressor_oracle.ckpt
+    ORACLE_REWARD_CHECKPOINT=custom_models/ismrm_neg_regressor_oracle/ismrm_neg_regressor_oracle.ckpt
 else
     echo "Running training on a cluster node..."
     module load python/3.10 cuda cudnn httpproxy
@@ -75,10 +75,6 @@ else
     
     ORACLE_CRIT_CHECKPOINT=$DATADIR/ismrm_paper_oracle.ckpt
     ORACLE_REWARD_CHECKPOINT=$DATADIR/ismrm_classif_oracle.ckpt
-
-    # echo "Copying agent checkpoint..."
-    # cp ~/projects/def-pmjodoin/levje/agents/sac_checkpoint/* $DATADIR/sac_checkpoint
-    # AGENTCHECKPOINT=$DATADIR/sac_checkpoint/last_model_state.ckpt
 fi
 
 for RNGSEED in "${SEEDS[@]}"
@@ -86,11 +82,6 @@ do
     DEST_FOLDER="${EXPDIR}/${EXPNAME}/${EXPID}/${RNGSEED}"
 
     additionnal_args=()
-
-    # --oracle_checkpoint ${ORACLECHECKPOINT} \
-    # --oracle_validator \
-    # --oracle_stopping_criterion \
-    # --oracle_bonus 10.0 \
 
     # Start training
     python -O $SOURCEDIR/TrackToLearn/trainers/sac_auto_train.py \

@@ -136,7 +136,7 @@ def from_polar(actions, radius=1.):
     return cart_directions
 
 
-def prettier_metrics(metrics, as_line=False):
+def prettier_metrics(metrics, as_line: bool = False, title: str = None):
     """ Pretty print metrics """
     if as_line:
         return " | ".join(["{}: {:.4f}".format(k, v) for k, v in metrics.items()])
@@ -157,7 +157,10 @@ def prettier_metrics(metrics, as_line=False):
 
     # Create the header
     header = "=" * (max_key_len + max_val_len + 7)
-    header = header + "\nTest results\n"
+    if title is None:
+        header = header + "\nTest results\n"
+    else:
+        header = header + "\n" + title + "\n"
     header = header + "=" * (max_key_len + max_val_len + 7)
 
     # Create the table
@@ -169,6 +172,71 @@ def prettier_metrics(metrics, as_line=False):
 
     # Create the footer
     footer = "=" * (max_key_len + max_val_len + 7)
+
+    return header + table + "\n" + footer
+
+def prettier_dict(d: dict, title: str = None):
+    # Build a string of the metrics to eventually print
+    # The string should be the representation of a table
+    # with each metrics on a row with the following format:
+    # ===================================
+    # <Print the title here>
+    # ===================================
+    # | train
+    # |   ↳ other_dict
+    # |     ↳ value1 : 0.1
+    # |     ↳ value2 : 0.2
+    # |   ↳ value3 : 0.3
+    # | test
+    # |   ↳ other_dict
+    # |     ↳ value1 : 0.1
+    # |     ↳ value2 : 0.2
+    # |   ↳ value4 : 0.4
+    # ===================================
+
+    # We want to recursively print the dictionary in a pretty way
+    # with increasing indentation for each level of the dictionary.
+    # At level 0, there should only be | and one whitespace before the key.
+    # At level 1, there should be |, 2 whitespaces, ↳ and one whitespace before the key.
+    # At level 2, there should be |, 4 whitespaces, ↳ and one whitespace before the key.
+    # etc.
+    left_padding = 1        # Padding after |
+    nb_indent_spaces = 2    # Whitespace after left padding and before ↳
+    right_padding = 4       # Number of extra "=" characters for the header/footer
+
+    def pretty(d, level=0):
+        table = ""
+        indentation = " " * nb_indent_spaces * level
+        for k, v in d.items():
+            if isinstance(v, dict):
+                if level > 0:
+                    table = table + \
+                        "\n|" + " " * left_padding + indentation + "↳ " + k + pretty(v, level + 1)
+                else:
+                    table = table + \
+                        "\n|" + " " * left_padding + indentation + k + pretty(v, level + 1)
+            else:
+                if level > 0:
+                    table = table + \
+                        "\n|" + " " * left_padding + indentation + "↳ " + k + " : " + str(v)
+                else:
+                    table = table + \
+                        "\n|" + " " * left_padding + indentation + k + " : " + str(v)
+        return table
+    
+    table = pretty(d)
+
+    # Create the header. The header length should be as long as the longest line in the table.
+    max_line_len = max([len(line) for line in table.split("\n")])
+    if title is not None:
+        header = "=" * (max_line_len + right_padding) + "\n"
+        header = header + title + "\n"
+        header = header + "=" * (max_line_len + right_padding)
+    else:
+        header = "=" * (max_line_len + right_padding)
+
+    # Create the footer
+    footer = "=" * (max_line_len + right_padding)
 
     return header + table + "\n" + footer
 

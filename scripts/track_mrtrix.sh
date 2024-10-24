@@ -33,7 +33,7 @@ MAXLENGTH=200
 # Track the interface using iFOD2
 tckgen ${DATASET_DIR}/fodfs/fibercup_fodf_mrtrix.nii.gz \
 	${OUTNAME} \
-	-algorithm iFOD2 \
+	-algorithm ${ALGORITHM} \
 	-select ${NB_STREAMLINES} \
 	-minlength ${MINLENGTH} \
 	-maxlength ${MAXLENGTH} \

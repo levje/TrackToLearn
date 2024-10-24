@@ -62,7 +62,8 @@ do
         ${DEST_FOLDER}/${tractogram_pre} \
         ${output_folder}/${tractogram_post} \
         --minL 20 \
-        --maxL 200
+        --maxL 200 \
+        --reference ${DATASETDIR}/scoring_data/t1.nii.gz
 
     # Re-score the tractogram, this time with streamlines
     # of length between 20mm and 200mm
@@ -76,7 +77,8 @@ do
             ${output_folder}/${tractogram_post} \
             ${DATASETDIR}/scoring_data/scil_scoring_config.json \
             ${output_folder}/scores \
-            --gt_dir ${DATASETDIR}/scoring_data
+            --gt_dir ${DATASETDIR}/scoring_data \
+            --reference ${DATASETDIR}/scoring_data/t1.nii.gz
 
         echo "RESULTS: ================================"
         head -n 25 ${output_folder}/scores/results.json
