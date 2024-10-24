@@ -16,11 +16,11 @@ def _verify_out_activation_with_data(out_activation, labels):
     max_val = torch.max(labels)
     if min_val >= 0 and min_val <= 1:
         assert max_val <= 1, "The labels should be in the range [0, 1]"
-        assert isinstance(out_activation, nn.Sigmoid), \
+        assert isinstance(out_activation, nn.Sigmoid) or out_activation == nn.Sigmoid, \
             "The output activation should be a sigmoid for range [0, 1]"
     elif min_val >= -1 and min_val <= 0:
         assert max_val <= 1, "The labels should be in the range [-1, 1]"
-        assert isinstance(out_activation, nn.Tanh), \
+        assert isinstance(out_activation, nn.Tanh) or out_activation == nn.Tanh, \
             "The output activation should be a tanh for range [-1, 1]"
     else:
         raise ValueError("The labels should be in the range [-1, 1] or [0, 1]")
@@ -131,7 +131,7 @@ class TransformerOracle(LightningLikeModule):
         # Loss function
         self.loss = loss()
 
-        self.is_binary_classif = self.out_activation == nn.Sigmoid
+        self.is_binary_classif = isinstance(self.out_activation, nn.Sigmoid)
 
         # Metrics
         if self.is_binary_classif:
@@ -183,7 +183,7 @@ class TransformerOracle(LightningLikeModule):
             "scaler": scaler
         }
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
         if len(x.shape) > 3:
             x = x.squeeze(0)
         N, L, D = x.shape  # Batch size, length of sequence, nb. of dims
@@ -195,7 +195,9 @@ class TransformerOracle(LightningLikeModule):
         hidden = self.bert(encoding)
 
         y = self.head(hidden[:, 0])
-        y = self.out_activation(y)
+
+        if not logits and self.loss == nn.BCEWithLogitsLoss:
+            y = self.out_activation(y)
 
         return y.squeeze(-1)
 
@@ -282,8 +284,13 @@ class TransformerOracle(LightningLikeModule):
             x, y = x.squeeze(0), y.squeeze(0)
 
         with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.enable_amp):
-            y_hat = self(x)
-            loss = self.loss(y_hat, y)
+            if isinstance(self.loss, nn.BCEWithLogitsLoss):
+                logits = self(x, logits=True)
+                loss = self.loss(logits, y)
+                y_hat = self.out_activation(logits)
+            else:
+                y_hat = self(x)
+                loss = self.loss(y_hat, y)
 
         y_int = torch.round(y)
 
@@ -318,8 +325,13 @@ class TransformerOracle(LightningLikeModule):
 
         with torch.no_grad():
             with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.enable_amp):
-                y_hat = self(x)
-                loss = self.loss(y_hat, y)
+                if isinstance(self.loss, nn.BCEWithLogitsLoss):
+                    logits = self(x, logits=True)
+                    loss = self.loss(logits, y)
+                    y_hat = self.out_activation(logits)
+                else:
+                    y_hat = self(x)
+                    loss = self.loss(y_hat, y)
                 y_int = torch.round(y)
 
             # Compute & log the metrics
@@ -361,8 +373,14 @@ class TransformerOracle(LightningLikeModule):
 
         with torch.no_grad():
             with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.enable_amp):
-                y_hat = self(x)
-                loss = self.loss(y_hat, y)
+                if isinstance(self.loss, nn.BCEWithLogitsLoss):
+                    logits = self(x, logits=True)
+                    loss = self.loss(logits, y)
+                    y_hat = self.out_activation(logits)
+                else:
+                    y_hat = self(x)
+                    loss = self.loss(y_hat, y)
+
                 y_int = torch.round(y)
 
             # Compute & log the metrics
