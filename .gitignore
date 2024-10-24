@@ -78,3 +78,4 @@ slurm*
 .temp*
 data/
 custom_models/
+out_tractograms/
