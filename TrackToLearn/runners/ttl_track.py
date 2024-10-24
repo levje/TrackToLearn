@@ -26,6 +26,8 @@ from TrackToLearn.datasets.utils import MRIDataVolume
 from TrackToLearn.experiment.experiment import Experiment
 from TrackToLearn.tracking.tracker import Tracker
 from TrackToLearn.utils.torch_utils import get_device
+from TrackToLearn.environments.rollout_env import RolloutEnvironment
+from TrackToLearn.oracles.oracle import OracleSingleton
 
 # Define the example model paths from the install folder.
 # Hackish ? I'm not aware of a better solution but I'm
@@ -94,25 +96,37 @@ class TrackToLearnTrack(Experiment):
                 data=fa_image.get_fdata(),
                 affine_vox2rasmm=fa_image.affine)
 
-        self.agent = track_dto['agent']
-        self.hyperparameters = track_dto['hyperparameters']
+        self.agent_checkpoint = track_dto['agent_checkpoint']
+        self.agent_checkpoint_dir = track_dto['agent_checkpoint_dir']
 
-        with open(self.hyperparameters, 'r') as json_file:
-            hyperparams = json.load(json_file)
-            self.algorithm = hyperparams['algorithm']
-            self.step_size = float(hyperparams['step_size'])
-            self.voxel_size = hyperparams.get('voxel_size', 2.0)
-            self.theta = hyperparams['max_angle']
-            self.hidden_dims = hyperparams['hidden_dims']
-            self.n_dirs = hyperparams['n_dirs']
-            self.target_sh_order = hyperparams['target_sh_order']
+        def load_hyperparameters(hparams_path):
+            with open(hparams_path, 'r') as f:
+                hparams = json.load(f)
+            return hparams
+        
+        checkpoint_dir = self.agent_checkpoint_dir or os.path.dirname(self.agent_checkpoint)
+        
+        self.hparams = load_hyperparameters(os.path.join(
+            checkpoint_dir, 'hyperparameters.json'))
+
+        self.algorithm = self.hparams['algorithm']
+        self.step_size = float(self.hparams['step_size'])
+        self.voxel_size = self.hparams.get('voxel_size', 2.0)
+        self.theta = self.hparams['max_angle']
+        self.hidden_dims = self.hparams['hidden_dims']
+        self.n_dirs = self.hparams['n_dirs']
+        self.target_sh_order = self.hparams['target_sh_order']
 
         self.alignment_weighting = 0.0
         # Oracle parameters
-        self.oracle_checkpoint = None
-        self.oracle_bonus = 0.0
+        self.oracle_reward_checkpoint = None
+        self.oracle_crit_checkpoint = None
+        self.oracle_bonus = 0
         self.oracle_validator = False
         self.oracle_stopping_criterion = False
+
+        # Monte Carlo Oracle
+        self.mc_oracle_checkpoint = track_dto['mc_oracle_checkpoint']
 
         self.random_seed = track_dto['rng_seed']
         torch.manual_seed(self.random_seed)
@@ -164,12 +178,25 @@ class TrackToLearnTrack(Experiment):
             self.input_size,
             self.action_size,
             self.hidden_dims,
-            n_actors=self.n_actor,
             rng=self.rng,
             device=self.device)
 
         # Load pretrained policies
-        alg.agent.load(self.agent, 'last_model_state')
+        if self.agent_checkpoint_dir:
+            # Use the legacy method that loads the two files of weights
+            # for the policy and the critic.
+            alg.agent.load(self.agent_checkpoint_dir, 'last_model_state')
+        elif self.agent_checkpoint:
+            # Load the bundled checkpoint file.
+            alg.load_checkpoint(self.agent_checkpoint)
+
+        if self.mc_oracle_checkpoint:
+            oracle = OracleSingleton(self.mc_oracle_checkpoint, device=self.device)
+            rollout_env = RolloutEnvironment(
+                ref_img, oracle,
+                min_streamline_steps=env.min_nb_steps + 1,
+                max_streamline_steps=env.max_nb_steps + 1)
+            rollout_env.setup_rollout_agent(alg.agent)
 
         # Initialize Tracker, which will handle streamline generation
 
@@ -180,6 +207,10 @@ class TrackToLearnTrack(Experiment):
 
         # Run tracking
         env.load_subject()
+
+        if self.mc_oracle_checkpoint:
+            env.setup_rollout_env(rollout_env)
+        
         filetype = detect_format(self.out_tractogram)
         tractogram = tracker.track(env, filetype)
 
@@ -235,17 +266,14 @@ def add_track_args(parser):
     add_out_options(parser)
 
     agent_group = parser.add_argument_group('Tracking agent options')
-    agent_group.add_argument('--agent', type=str,
-                             help='Path to the folder containing .pth files.\n'
-                             'If not set, will default to the example '
-                             'models.\n'
-                             '[{}]'.format(DEFAULT_MODEL))
-    agent_group.add_argument(
-        '--hyperparameters', type=str,
-        help='Path to the .json file containing the '
-        'hyperparameters of your tracking agent. \n'
-        'If not set, will default to the example models.\n'
-        '[{}]'.format(DEFAULT_MODEL))
+    agent_checkpoint_group = agent_group.add_mutually_exclusive_group(required=True)
+    agent_checkpoint_group.add_argument('--agent_checkpoint_dir', type=str,
+                                        help='Path to the folder containing .pth files.\n'
+                                        'This avoids retraining the agent from scratch \n'
+                                        'and allows to directly fine-tune it.')
+    agent_checkpoint_group.add_argument('--agent_checkpoint', type=str,
+                                        help='Path to the agent checkpoint FILE to load.')
+
     agent_group.add_argument('--n_actor', type=int, default=10000, metavar='N',
                              help='Number of streamlines to track simultaneous'
                              'ly.\nLimited by the size of your GPU and RAM. A '
@@ -280,19 +308,12 @@ def add_track_args(parser):
     parser.add_argument('--rng_seed', default=1337, type=int,
                         help='Random number generator seed [%(default)s].')
 
-
-def verify_agent_option(parser, args):
-
-    if (args.agent is not None and args.hyperparameters is None) or \
-       (args.agent is None and args.hyperparameters is not None):
-        parser.error('You must specify both --agent and --hyperparameters '
-                     'arguments or use the default model.')
-
-    if args.agent is None:
-        args.agent = DEFAULT_MODEL
-        args.hyperparameters = join(
-            DEFAULT_MODEL, 'hyperparameters.json')
-
+def add_monte_carlo_args(parser):
+    parser.add_argument('--mc_oracle_checkpoint', type=str,
+                        help='Path to the oracle checkpoint FILE to load.\n'
+                        'This oracle will be used to evaluate the streamlines.'
+                        '\n It should be able to predict streamlines at \n'
+                        'any length.')
 
 def parse_args():
     """ Generate a tractogram from a trained model. """
@@ -301,6 +322,7 @@ def parse_args():
         formatter_class=RawTextHelpFormatter)
 
     add_track_args(parser)
+    add_monte_carlo_args(parser)
 
     args = parser.parse_args()
 
@@ -312,7 +334,6 @@ def parse_args():
 
     verify_streamline_length_options(parser, args)
     verify_compression_th(args.compress)
-    verify_agent_option(parser, args)
 
     return args
 

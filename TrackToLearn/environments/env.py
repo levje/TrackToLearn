@@ -1,3 +1,4 @@
+import logging
 import functools
 from typing import Callable, Dict, Tuple
 
@@ -32,9 +33,11 @@ from TrackToLearn.environments.stopping_criteria import (
 from TrackToLearn.environments.utils import (  # is_looping,
     is_too_curvy, is_too_long)
 from TrackToLearn.utils.utils import normalize_vectors
+from TrackToLearn.environments.rollout_env import RolloutEnvironment
 
 # from dipy.io.utils import get_reference_info
 
+LOGGER = logging.getLogger(__name__)
 
 def collate_fn(data):
     return data
@@ -142,6 +145,7 @@ class BaseEnv(object):
         self.device = env_dto['device']
         self.target_sh_order = env_dto['target_sh_order']
         self.reward_with_gt = env_dto['reward_with_gt']
+        self.rollout_env = None
 
         # Load one subject as an example
         self.load_subject()
@@ -303,6 +307,7 @@ class BaseEnv(object):
             self.reward_function = RewardFunction(
                 factors,
                 weights)
+            
 
     @classmethod
     def from_dataset(
@@ -517,6 +522,10 @@ class BaseEnv(object):
         voxel_size = np.mean(np.abs(diag))
 
         return voxel_size
+
+    def setup_rollout_env(self, rollout_env: RolloutEnvironment):
+        LOGGER.info('Setting up rollout environment')
+        self.rollout_env = rollout_env
 
     def _format_actions(
         self,
