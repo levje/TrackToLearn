@@ -68,7 +68,7 @@ class OracleReward(Reward):
         # will return a copy of the array.
         idx = np.arange(N)[dones]
         # Assign the reward using the precomputed double indexes.
-        if self.scale_reward:
+        if self.proportional_reward:
             reward[idx] = predictions
         else:
             idx = idx[predictions > self.reward_valid_threshold]

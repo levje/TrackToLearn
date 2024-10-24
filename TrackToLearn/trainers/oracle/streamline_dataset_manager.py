@@ -1,3 +1,4 @@
+import logging
 import os
 import h5py
 import numpy as np
@@ -7,6 +8,9 @@ from dipy.io.stateful_tractogram import StatefulTractogram
 from tqdm import tqdm
 
 DEFAULT_DATASET_NAME = "new_dataset.hdf5"
+
+LOGGER = logging.getLogger(__name__)
+
 """
 The StreamlineDatasetManager manages a HDF5 file containing the streamlines
 and their respective scores used to train the Oracle model. Here we manage
@@ -50,7 +54,7 @@ class StreamlineDatasetManager(object):
                 f"The saving path {saving_path} does not exist.")
 
         if dataset_to_augment_path is not None:
-            print("Loading the dataset to augment: ", dataset_to_augment_path)
+            LOGGER.info("Loading the dataset to augment: ", dataset_to_augment_path)
             self.current_train_nb_streamlines, self.current_test_nb_streamlines = self._load_and_verify_streamline_dataset(
                 dataset_to_augment_path)
 
@@ -72,7 +76,7 @@ class StreamlineDatasetManager(object):
 
             self.file_is_created = True
         else:
-            print("Creating a new dataset.")
+            LOGGER.info("Creating a new dataset.")
             self.dataset_file_path = os.path.join(saving_path, dataset_name)
             self.current_train_nb_streamlines = 0
             self.current_test_nb_streamlines = 0
@@ -94,6 +98,13 @@ class StreamlineDatasetManager(object):
         # the dataset accordingly.
         train_indices = []          # [(pos_indices, neg_indices), ...]
         test_indices = []           # [(pos_indices, neg_indices), ...]
+
+        # Mainly for logging purposes below.
+        train_total_nb_pos = 0
+        train_total_nb_neg = 0
+        test_total_nb_pos = 0
+        test_total_nb_neg = 0
+
         train_nb_streamlines = 0    # train_nb_pos + train_nb_neg
         test_nb_streamlines = 0     # test_nb_pos + test_nb_neg
         for sft_valid, sft_invalid in filtered_tractograms:
@@ -119,8 +130,21 @@ class StreamlineDatasetManager(object):
             train_indices.append((pos_train_indices, neg_train_indices))
             test_indices.append((pos_test_indices, neg_test_indices))
 
+            # Mainly for stat purposes
+            train_total_nb_pos += nb_pos_train
+            train_total_nb_neg += nb_neg_train
+            test_total_nb_pos += nb_pos_test
+            test_total_nb_neg += nb_neg_test
+
             train_nb_streamlines += nb_pos_train + nb_neg_train
             test_nb_streamlines += nb_pos_test + nb_neg_test
+
+
+        # Logging the stats of the streamlines to add
+        LOGGER.info(
+            f"Adding {train_nb_streamlines} ({train_total_nb_pos} val | {train_total_nb_neg} inv) training streamlines to the dataset.")
+        LOGGER.info(
+            f"Adding {test_nb_streamlines} ({test_total_nb_pos} val | {test_total_nb_neg} inv) testing streamlines to the dataset.")
 
         write_mode = 'w' if not self.file_is_created else 'a'
         with h5py.File(self.dataset_file_path, write_mode) as f:
@@ -325,3 +349,54 @@ class StreamlineDatasetManager(object):
             test_size = get_group_size(dataset['test']) if has_test else 0
 
             return train_size, test_size
+
+    def fetch_dataset_stats(self):
+        """ Get the current dataset statistics."""
+
+        with h5py.File(self.dataset_file_path, 'r') as f:
+            train_group = f['train']
+            test_group = f['test']
+
+            train_nb_pos = np.sum(train_group['scores'])
+            train_nb_neg = train_group['scores'].shape[0] - train_nb_pos
+            test_nb_pos = np.sum(test_group['scores'])
+            test_nb_neg = test_group['scores'].shape[0] - test_nb_pos
+
+
+        assert train_nb_pos + train_nb_neg == \
+            self.current_train_nb_streamlines, \
+            "The number of positive and negative streamlines in the training" \
+            "set does not match the total number of streamlines."
+        
+        assert test_nb_pos + test_nb_neg == \
+            self.current_test_nb_streamlines, \
+            "The number of positive and negative streamlines in the testing" \
+            "set does not match the total number of streamlines."
+
+        total_size = self.current_train_nb_streamlines + \
+            self.current_test_nb_streamlines
+        
+        real_train_ratio = self.current_train_nb_streamlines / total_size
+        real_test_ratio = self.current_test_nb_streamlines / total_size
+
+        stats = {
+            'train': {
+                'size': self.current_train_nb_streamlines,
+                'nb_pos': train_nb_pos,
+                'nb_neg': train_nb_neg,
+                'ratio_pos': train_nb_pos / self.current_train_nb_streamlines,
+                'ratio_neg': train_nb_neg / self.current_train_nb_streamlines
+            },
+            'test': {
+                'size': self.current_test_nb_streamlines,
+                'nb_pos': test_nb_pos,
+                'nb_neg': test_nb_neg,
+                'ratio_pos': test_nb_pos / self.current_test_nb_streamlines,
+                'ratio_neg': test_nb_neg / self.current_test_nb_streamlines
+            },
+            'train_ratio': real_train_ratio,
+            'test_ratio': real_test_ratio,
+            'total_size': total_size
+        }
+
+        return stats

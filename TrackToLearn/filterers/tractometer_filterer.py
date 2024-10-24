@@ -21,13 +21,15 @@ class TractometerFilterer(Filterer):
         base_dir,
         reference,
         dilate_endpoints=1,
-        invalid_score=0
+        invalid_score=0,
+        bbox_valid_check=True
     ):
         self.name = 'Tractometer'
         self.gt_config = os.path.join(base_dir, 'scil_scoring_config.json')
         self.gt_dir = base_dir
         self.dilation_factor = dilate_endpoints
         self.invalid_score = invalid_score
+        self.bbox_valid_check = bbox_valid_check
 
         assert os.path.exists(reference), f"Reference {reference} does not exist."
         self.reference = reference
@@ -48,7 +50,7 @@ class TractometerFilterer(Filterer):
         filtered_path_valid = os.path.join(out_dir, "valid_scored_{}.{}".format(Path(tractogram).stem, scored_extension))
         filtered_path_invalid = os.path.join(out_dir, "invalid_scored_{}.{}".format(Path(tractogram).stem, scored_extension))
         sft = load_tractogram(tractogram, self.reference,
-                            bbox_valid_check=True, trk_header_check=True)
+                            bbox_valid_check=self.bbox_valid_check, trk_header_check=True)
         
         if len(sft.streamlines) == 0:
             return (sft, sft)

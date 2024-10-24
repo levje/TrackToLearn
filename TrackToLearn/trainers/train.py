@@ -214,7 +214,8 @@ class TrackToLearnTraining(Experiment):
         valid_env: BaseEnv,
         max_ep: int = 1000,
         starting_ep: int = 0,
-        save_model_dir: str = None
+        save_model_dir: str = None,
+        test_before_training: bool = True
     ):
         """ Train the RL algorithm for N epochs. An epoch here corresponds to
         running tracking on the training set until all streamlines are done.
@@ -250,28 +251,29 @@ class TrackToLearnTraining(Experiment):
             prob=1.0, compress=0.0)
 
         # Run tracking before training to see what an untrained network does
-        valid_env.load_subject()
-        valid_tractogram, valid_reward = valid_tracker.track_and_validate(
-            valid_env)
-        stopping_stats = self.stopping_stats(valid_tractogram)
-        print(stopping_stats)
-        if valid_tractogram:
-            self.comet_monitor.log_losses(stopping_stats, i_episode)
+        if test_before_training:
+            valid_env.load_subject()
+            valid_tractogram, valid_reward = valid_tracker.track_and_validate(
+                valid_env)
+            stopping_stats = self.stopping_stats(valid_tractogram)
+            print(stopping_stats)
+            if valid_tractogram:
+                self.comet_monitor.log_losses(stopping_stats, i_episode)
 
-            filename = self.save_rasmm_tractogram(valid_tractogram,
-                                                  valid_env.subject_id,
-                                                  valid_env.affine_vox2rasmm,
-                                                  valid_env.reference,
-                                                  save_dir=save_model_dir)
-            scores = self.score_tractogram(filename, valid_env)
-            print(scores)
+                filename = self.save_rasmm_tractogram(valid_tractogram,
+                                                    valid_env.subject_id,
+                                                    valid_env.affine_vox2rasmm,
+                                                    valid_env.reference,
+                                                    save_dir=save_model_dir)
+                scores = self.score_tractogram(filename, valid_env)
+                print(scores)
 
-            self.comet_monitor.log_losses(scores, i_episode)
-        self.save_model(alg, save_model_dir)
+                self.comet_monitor.log_losses(scores, i_episode)
+            self.save_model(alg, save_model_dir)
 
-        # Display the results of the untrained network
-        self.log(
-            valid_tractogram, valid_reward, i_episode)
+            # Display the results of the untrained network
+            self.log(
+                valid_tractogram, valid_reward, i_episode)
 
         # Main training loop
         while i_episode < upper_bound:

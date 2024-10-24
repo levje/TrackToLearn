@@ -17,6 +17,8 @@ def parse_args() -> argparse.Namespace:
                         'If not specified, the tractograms will be saved in the same directory.')
     parser.add_argument('--invalid_score', type=int, default=0,
                         help='Score to assign to invalid streamlines.')
+    parser.add_argument('--no_bbox_valid_check', action='store_true',
+                        help='Disable the bounding box check when loading the tractograms.')
 
     return parser.parse_args()
 
@@ -25,9 +27,10 @@ def filter_tractograms(tractograms,
                        reference,
                        scoring_data_dir,
                        output_dir,
-                       invalid_score=0):
+                       invalid_score=0,
+                       bbox_valid_check=True):
     filterer = TractometerFilterer(
-        scoring_data_dir, reference, invalid_score=invalid_score)
+        scoring_data_dir, reference, invalid_score=invalid_score, bbox_valid_check=bbox_valid_check)
     for tractogram in tractograms:
         print(f"Scoring {tractogram}", end='...')
         filterer(tractogram, output_dir)
@@ -48,7 +51,8 @@ def main():
 
     filter_tractograms(args.tractogram, args.reference,
                        args.scoring_data_dir, args.output_dir,
-                       args.invalid_score)
+                       args.invalid_score,
+                       not args.no_bbox_valid_check)
 
 
 if __name__ == '__main__':

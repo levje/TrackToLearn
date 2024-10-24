@@ -73,16 +73,19 @@ class OracleTrainer(object):
                  max_epochs,
                  use_comet=True,
                  enable_checkpointing=True,
+                 checkpoint_prefix='',
                  val_interval=1,
                  log_interval=1,
                  grad_accumulation_steps=1,
-                 device=get_device()
+                 device=get_device(),
+                 metrics_prefix=None,
                  ):
         self.experiment = experiment
         self.experiment_id = experiment_id
         self.saving_path = saving_path
 
         self.checkpointing_enabled = enable_checkpointing
+        self.checkpoint_prefix = checkpoint_prefix
         self.device = device
         self.max_epochs = max_epochs
         self.val_interval = val_interval
@@ -92,7 +95,8 @@ class OracleTrainer(object):
         self.oracle_monitor = OracleMonitor(
             experiment=self.experiment,
             experiment_id=self.experiment_id,
-            use_comet=use_comet
+            use_comet=use_comet,
+            metrics_prefix=metrics_prefix
         )
         self.log_interval = log_interval  # Log every n update steps
         self.grad_accumulation_steps = grad_accumulation_steps
@@ -329,16 +333,16 @@ class OracleTrainer(object):
                 epoch, val_metrics, self.optimizer, self.scheduler, self.scaler)
 
             # Always have a copy of the latest model
-            latest_name = '{}/latest_epoch.ckpt'.format(
-                self.saving_path, epoch)
+            latest_name = '{}/{}latest_epoch.ckpt'.format(
+                self.saving_path, self.checkpoint_prefix + '_')
             torch.save(checkpoint_dict, latest_name)
 
             # If the VC is the best so far, save the model with the name best_acc_epoch_{epoch}.ckpt
             # Also save the optimizer state and the scheduler state, the epoch and the metrics
             val_loss = val_metrics['val_loss']
             if val_loss < best_loss:
-                best_name = '{}/best_vc_epoch.ckpt'.format(
-                    self.saving_path, epoch)
+                best_name = '{}/{}best_vc_epoch.ckpt'.format(
+                    self.saving_path, self.checkpoint_prefix + '_')
                 torch.save(checkpoint_dict, best_name)
                 best_loss = val_loss
 

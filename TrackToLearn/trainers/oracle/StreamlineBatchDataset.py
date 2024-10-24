@@ -1,3 +1,4 @@
+import logging
 import h5py
 import numpy as np
 
@@ -5,6 +6,7 @@ from dipy.tracking.streamline import set_number_of_points
 from nibabel.streamlines.array_sequence import ArraySequence
 from torch.utils.data import Dataset
 
+LOGGER = logging.getLogger(__name__)
 
 class StreamlineBatchDataset(Dataset):
     """ Dataset for loading streamlines from hdf5 files. The streamlines
@@ -51,6 +53,11 @@ class StreamlineBatchDataset(Dataset):
         self.dense = dense
         self.partial = partial
         self.is_sorted = lambda a: np.all(a[:-1] <= a[1:])
+
+        if self.dense:
+            LOGGER.debug("Dense mode is enabled. Streamlines will be randomly cut.")
+            if self.partial:
+                LOGGER.debug("Partial mode is enabled. Scores will be scaled.")
 
         assert stage in ["train", "test"], \
             "The stage should be either 'train' or 'test'."

@@ -110,7 +110,7 @@ class Timer:
         if self.newline:
             print(self.txt + " done in ", end="")
 
-        print("{:.2f} sec.".format(time() - self.start))
+        print("{:.10f} sec.".format(time() - self.start))
 
 
 def from_sphere(actions, sphere, norm=1.):

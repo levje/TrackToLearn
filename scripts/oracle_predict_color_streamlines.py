@@ -200,7 +200,7 @@ class TractOracleNetPredictor():
                     predictions > self.threshold).squeeze()
 
             new_sft = StatefulTractogram.from_sft(sft[ids].streamlines, sft)
-            new_sft.data_per_streamline['score'] = predictions[ids]
+            new_sft.data_per_streamline['pred_score'] = predictions[ids]
 
             # Save the streamlines
             save_filtered_streamlines(new_sft, predictions[ids], self.out)
@@ -213,14 +213,14 @@ class TractOracleNetPredictor():
 
                 new_sft = StatefulTractogram.from_sft(
                     sft[rejected_ids].streamlines, sft)
-                new_sft.data_per_streamline['score'] = predictions[rejected_ids]
+                new_sft.data_per_streamline['pred_score'] = predictions[rejected_ids]
 
                 # Save the streamlines
                 save_filtered_streamlines(
                     new_sft, predictions[rejected_ids], self.rejected)
         else:
             # Save all streamlines
-            sft.data_per_point['score'] = predictions
+            sft.data_per_point['pred_score'] = predictions
 
             save_filtered_streamlines(
                 sft, predictions, self.out, dense=self.dense)
