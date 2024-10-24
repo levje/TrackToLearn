@@ -11,12 +11,18 @@ def add_logging_args(parser):
     return parser
 
 def setup_logging(args):
-    # Set up logging configuration for all the loggers in the project
-    # I don't want the loggers from other libraries to be affected by this
-    # configuration.
+    formatter = logging.Formatter(
+        '%(levelname)s:%(filename)s: %(message)s')
 
     if args.log_file is not None:
-        logging.basicConfig(filename=args.log_file)
+        file_handler = logging.FileHandler(args.log_file)
+        file_handler.setFormatter(formatter)
+        logging.basicConfig(filename=args.log_file,
+                            handlers=[file_handler])
+    elif args.log_level is not None:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logging.basicConfig(handlers=[console_handler])
 
     root_logger.setLevel(args.log_level)
 
