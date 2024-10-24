@@ -1,4 +1,3 @@
-import logging
 import functools
 from typing import Callable, Dict, Tuple
 
@@ -18,6 +17,7 @@ from scilpy.reconst.utils import (find_order_from_nb_coeff,
 from dipy.reconst.shm import sh_to_sf_matrix
 from torch.utils.data import DataLoader
 
+from TrackToLearn.utils.logging import get_logger
 from TrackToLearn.datasets.SubjectDataset import SubjectDataset
 from TrackToLearn.datasets.utils import (MRIDataVolume,
                                          convert_length_mm2vox,
@@ -35,9 +35,7 @@ from TrackToLearn.environments.utils import (  # is_looping,
 from TrackToLearn.utils.utils import normalize_vectors
 from TrackToLearn.environments.rollout_env import RolloutEnvironment
 
-# from dipy.io.utils import get_reference_info
-
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(__name__)
 
 def collate_fn(data):
     return data

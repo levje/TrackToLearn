@@ -1,4 +1,3 @@
-import logging
 import os
 import h5py
 import numpy as np
@@ -7,9 +6,11 @@ from dipy.tracking.streamline import set_number_of_points
 from dipy.io.stateful_tractogram import StatefulTractogram
 from tqdm import tqdm
 
+from TrackToLearn.utils.logging import get_logger
+
 DEFAULT_DATASET_NAME = "new_dataset.hdf5"
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(__name__)
 
 """
 The StreamlineDatasetManager manages a HDF5 file containing the streamlines

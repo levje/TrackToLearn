@@ -3,10 +3,10 @@ import argparse
 import tempfile
 import comet_ml
 import json
-import logging
 
 from comet_ml import Experiment as CometExperiment
 
+from TrackToLearn.utils.logging import get_logger
 from TrackToLearn.trainers.sac_auto_train import TrackToLearnTraining, add_sac_auto_args, SACAutoTrackToLearnTraining
 from TrackToLearn.trainers.ppo_train import PPOTrackToLearnTraining, add_ppo_args
 from TrackToLearn.trainers.tractoraclenet_train import add_oracle_train_args
@@ -27,7 +27,7 @@ from TrackToLearn.utils.utils import prettier_metrics, prettier_dict
 
 assert_accelerator()
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(__name__)
 
 class RlhfRefactored(TrackToLearnTraining):
 

@@ -1,7 +1,9 @@
 import comet_ml
-import logging
 import numpy as np
 
+from TrackToLearn.utils.logging import get_logger
+
+LOGGER = get_logger(__name__)
 
 class OracleMonitor(object):
 
@@ -26,8 +28,7 @@ class OracleMonitor(object):
 
         self.use_comet = use_comet
         if not self.use_comet:
-            import warnings
-            warnings.warn(
+            LOGGER.warn(
                 "Comet is not being used. No metrics will be logged for the Oracle training.")
             
         self.metrics_prefix = metrics_prefix
@@ -37,9 +38,11 @@ class OracleMonitor(object):
             return
         
         if self.metrics_prefix:
-                prefix = f"{self.metrics_prefix}/"
+            prefix = f"{self.metrics_prefix}/"
+        else:
+            prefix = None
         
-        self.experiment.log_parameters(hyperparameters, prefix=self.metrics_prefix)
+        self.experiment.log_parameters(hyperparameters, prefix=prefix)
 
     def log_metrics(self, metrics_dict, step: int, epoch: int):
         if not self.use_comet:

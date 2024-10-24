@@ -1,12 +1,12 @@
-import logging
 import h5py
 import numpy as np
 
 from dipy.tracking.streamline import set_number_of_points
 from nibabel.streamlines.array_sequence import ArraySequence
 from torch.utils.data import Dataset
+from TrackToLearn.utils.logging import get_logger
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(__name__)
 
 class StreamlineBatchDataset(Dataset):
     """ Dataset for loading streamlines from hdf5 files. The streamlines

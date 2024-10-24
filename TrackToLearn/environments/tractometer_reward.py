@@ -1,7 +1,6 @@
 
 import itertools
 import json
-import logging
 import os
 import tempfile
 from collections import namedtuple
@@ -19,10 +18,12 @@ from scilpy.segment.streamlines import filter_grid_roi, filter_grid_roi_both
 from scilpy.tractanalysis.streamlines_metrics import compute_tract_counts_map
 from scilpy.utils.filenames import split_name_with_nii
 
+from TrackToLearn.utils.logging import get_logger
 from TrackToLearn.environments.reward import Reward
 
 def_len = [0, np.inf]
 
+LOGGER = get_logger(__name__)
 
 def load_and_verify_everything(
     reference,
@@ -53,14 +54,14 @@ def load_and_verify_everything(
     list_masks_files_r = list(dict.fromkeys(list_masks_files_r))
     list_masks_files_o = list(dict.fromkeys(list_masks_files_o))
 
-    logging.info("Loading and/or computing ground-truth masks, limits "
+    LOGGER.info("Loading and/or computing ground-truth masks, limits "
                  "masks and any_masks.")
     gt_masks = compute_masks_from_bundles(gt_masks_files, reference)
     inv_all_masks = compute_masks_from_bundles(all_masks_files, reference,
                                                inverse_mask=True)
     any_masks = compute_masks_from_bundles(any_masks_files, reference)
 
-    logging.info("Extracting ground-truth head and tail masks.")
+    LOGGER.info("Extracting ground-truth head and tail masks.")
     gt_tails, gt_heads = compute_endpoint_masks(roi_options, args)
 
     # Update the list of every ROI, remove duplicates
@@ -226,7 +227,7 @@ def read_config_file(
             roi_options.append(roi_option)
 
     if show_warning_gt:
-        logging.info(
+        LOGGER.info(
             "At least one bundle had no gt_mask. Some tractometry metrics "
             "won't be computed (OR, OL) for these bundles.")
 
@@ -436,7 +437,7 @@ def _extract_vb_and_wpc_all_bundles(
             for j in range(i + 1, nb_bundles):
                 duplicate_ids = np.intersect1d(vs_ids_list[i], vs_ids_list[j])
                 if len(duplicate_ids) > 0:
-                    logging.warning(
+                    LOGGER.warning(
                         "{} streamlines belong to true connections of both "
                         "bundles {} and {}.\n"
                         "Please verify your criteria!"
@@ -564,7 +565,7 @@ def segment_tractogram_from_roi(
     sft.to_vox()
 
     # VS
-    logging.info("Extracting valid bundles (and wpc, if any)")
+    LOGGER.info("Extracting valid bundles (and wpc, if any)")
     detected_vs_wpc_ids = \
         _extract_vb_and_wpc_all_bundles(
             gt_tails, gt_heads, sft, bundle_names, bundle_lengths,
