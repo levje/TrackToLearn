@@ -36,7 +36,7 @@ if [ $islocal -eq 1 ]; then
     DATADIR=data/datasets/ismrm2015_2mm
     EXPDIR=data/experiments
     LOGSDIR=data/logs
-    BACKUPDIR=data/backups
+    # BACKUPDIR=data/backups
 
     # If CONDAENV is not set, PYTHON EXEC should be python, else it should be the python executable of the conda environment.
     if [ -z $1 ]; then
@@ -125,7 +125,7 @@ do
         --max_length 200 \
         --noise 0.0 \
         --batch_size ${BATCHSIZE} \
-        --replay_size 1000000 \
+        --replay_size 100000 \
         --lr ${LR} \
         --gamma ${GAMMA} \
         --theta ${THETA} \
